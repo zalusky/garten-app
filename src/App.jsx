@@ -18,6 +18,12 @@ const TABS = [
 
 export default function App() {
   const [tab, setTab] = useState('map')
+  const [logFilterPoi, setLogFilterPoi] = useState(null)
+
+  function openLogForPoi(poi) {
+    setLogFilterPoi(poi)
+    setTab('log')
+  }
 
   return (
     <div className="min-h-screen bg-green-50 flex flex-col">
@@ -28,8 +34,8 @@ export default function App() {
       </header>
 
       <main className="flex-1 overflow-auto">
-        {tab === 'map'     && <GardenMap />}
-        {tab === 'log'     && <LogBook />}
+        {tab === 'map'     && <GardenMap onOpenLog={openLogForPoi} />}
+        {tab === 'log'     && <LogBook filterPoi={logFilterPoi} onClearFilter={() => setLogFilterPoi(null)} />}
         {tab === 'recipes' && <RecipeBook />}
         {tab === 'seeds'   && <SeedInventory />}
         {tab === 'cal'     && <CalendarView />}
@@ -40,12 +46,13 @@ export default function App() {
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
-            onClick={() => setTab(id)}
+            onClick={() => { setTab(id); if (id !== 'log') setLogFilterPoi(null) }}
             className={`flex-1 flex flex-col items-center py-2 text-xs gap-1 transition-colors
               ${tab === id ? 'text-green-700 font-semibold' : 'text-gray-500 hover:text-green-600'}`}
           >
             <Icon size={20} />
             {label}
+            {id === 'log' && logFilterPoi && <span className="w-1.5 h-1.5 bg-orange-400 rounded-full" />}
           </button>
         ))}
       </nav>

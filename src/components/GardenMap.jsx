@@ -1,21 +1,18 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db'
-import { Plus, X, Move } from 'lucide-react'
+import { Plus, X, Move, BookOpen, List } from 'lucide-react'
 
-const TYPE_ICONS = {
-  baum:    '🌳',
-  gebäude: '🏡',
-  beet:    '🥕',
-}
+const TYPE_ICONS = { baum: '🌳', gebäude: '🏡', beet: '🥕' }
 
-export default function GardenMap() {
+export default function GardenMap({ onOpenLog }) {
   const [mapImg, setMapImg] = useState(() => localStorage.getItem('gartenMapImg') || null)
   const [addMode, setAddMode] = useState(false)
   const [moveMode, setMoveMode] = useState(false)
+  const [showList, setShowList] = useState(false)
   const [newPoi, setNewPoi] = useState(null)
   const [selected, setSelected] = useState(null)
-  const [draggingId, setDraggingId] = useState(null)
+  const [crosshair, setCrosshair] = useState({ x: 50, y: 50, visible: false })
   const mapRef = useRef()
 
   const pois = useLiveQuery(() => db.pois.toArray(), [])
@@ -30,33 +27,26 @@ export default function GardenMap() {
     }
   }
 
+  function handleMouseMove(e) {
+    const rect = mapRef.current.getBoundingClientRect()
+    setCrosshair({
+      x: ((e.clientX - rect.left) / rect.width * 100),
+      y: ((e.clientY - rect.top) / rect.height * 100),
+      visible: true,
+    })
+  }
+
   function handleMapClick(e) {
-    if (moveMode || draggingId) return
+    if (moveMode) return
     if (!addMode) return
     const { x, y } = getRelativePos(e)
     setNewPoi({ x, y })
     setAddMode(false)
   }
 
-  async function handlePoiDrop(e) {
-    if (!draggingId) return
-    e.preventDefault()
-    const { x, y } = getRelativePos(e)
-    await db.pois.update(draggingId, { x_position: x, y_position: y })
-    setDraggingId(null)
-  }
-
   async function savePoi(name, type, abbreviation, size) {
     if (!name.trim()) return
-    await db.pois.add({
-      name,
-      type,
-      abbreviation: abbreviation || '',
-      size: size || 28,
-      x_position: newPoi.x,
-      y_position: newPoi.y,
-      parent_id: null,
-    })
+    await db.pois.add({ name, type, abbreviation: abbreviation || '', size: size || 28, x_position: newPoi.x, y_position: newPoi.y, parent_id: null })
     setNewPoi(null)
   }
 
@@ -64,15 +54,13 @@ export default function GardenMap() {
     const file = e.target.files[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = ev => {
-      localStorage.setItem('gartenMapImg', ev.target.result)
-      setMapImg(ev.target.result)
-    }
+    reader.onload = ev => { localStorage.setItem('gartenMapImg', ev.target.result); setMapImg(ev.target.result) }
     reader.readAsDataURL(file)
   }
 
   return (
     <div className="p-4 flex flex-col gap-4">
+      {/* Toolbar */}
       <div className="flex gap-2 items-center flex-wrap">
         <label className="cursor-pointer bg-green-700 text-white px-3 py-1.5 rounded text-sm hover:bg-green-800">
           Luftbild hochladen
@@ -90,66 +78,130 @@ export default function GardenMap() {
         >
           <Move size={14} /> Verschieben
         </button>
-        {addMode && <span className="text-orange-600 text-sm font-medium">↓ Klick auf die Karte um POI zu platzieren</span>}
-        {moveMode && <span className="text-blue-600 text-sm font-medium">↓ POI anklicken & ziehen</span>}
+        <button
+          onClick={() => setShowList(v => !v)}
+          className={`flex items-center gap-1 px-3 py-1.5 rounded text-sm ${showList ? 'bg-green-600 text-white' : 'bg-white border border-gray-300 text-gray-600'}`}
+        >
+          <List size={14} /> POI-Liste
+        </button>
+        {addMode && <span className="text-orange-600 text-sm font-medium">Fadenkreuz auf gewünschte Stelle → klicken</span>}
+        {moveMode && <span className="text-blue-600 text-sm font-medium">POI anklicken & ziehen</span>}
       </div>
 
-      {/* Karte */}
-      <div
-        ref={mapRef}
-        onClick={handleMapClick}
-        onMouseUp={handlePoiDrop}
-        onTouchEnd={handlePoiDrop}
-        className={`relative w-full rounded-xl overflow-hidden border-2 select-none
-          ${addMode ? 'border-orange-400' : moveMode ? 'border-blue-400' : 'border-green-200'}
-          ${addMode ? 'cursor-crosshair' : moveMode ? 'cursor-move' : 'cursor-default'}`}
-        style={{ minHeight: 340, background: '#d4edba' }}
-      >
-        {/* Fadenkreuz beim Hinzufügen */}
-        {addMode && (
-          <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-10">
-            <div className="relative w-8 h-8">
-              <div className="absolute left-1/2 top-0 bottom-0 w-px bg-orange-400 opacity-50" />
-              <div className="absolute top-1/2 left-0 right-0 h-px bg-orange-400 opacity-50" />
-            </div>
+      <div className="flex gap-4">
+        {/* Karte */}
+        <div className="flex-1 relative">
+          <div
+            ref={mapRef}
+            onClick={handleMapClick}
+            onMouseMove={handleMouseMove}
+            onMouseLeave={() => setCrosshair(c => ({ ...c, visible: false }))}
+            className={`relative w-full rounded-xl overflow-hidden border-2 select-none
+              ${addMode ? 'border-orange-400' : moveMode ? 'border-blue-400' : 'border-green-200'}
+              cursor-none`}
+            style={{ minHeight: 340, background: '#d4edba' }}
+          >
+            {mapImg
+              ? <img src={mapImg} className="w-full h-full object-cover" alt="Gartenkarte" draggable={false} />
+              : <div className="flex items-center justify-center h-72 text-green-700 text-sm">Kein Luftbild — lade eines hoch oder klicke, um POIs zu setzen</div>
+            }
+
+            {/* Fadenkreuz — immer sichtbar beim Hovern */}
+            {crosshair.visible && (
+              <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 20 }}>
+                {/* horizontale Linie */}
+                <div className="absolute w-full" style={{
+                  top: `${crosshair.y}%`,
+                  height: '1px',
+                  background: addMode ? 'rgba(249,115,22,0.7)' : 'rgba(22,163,74,0.5)',
+                }} />
+                {/* vertikale Linie */}
+                <div className="absolute h-full" style={{
+                  left: `${crosshair.x}%`,
+                  width: '1px',
+                  background: addMode ? 'rgba(249,115,22,0.7)' : 'rgba(22,163,74,0.5)',
+                }} />
+                {/* Mittelpunkt */}
+                <div className="absolute rounded-full border-2" style={{
+                  left: `${crosshair.x}%`,
+                  top: `${crosshair.y}%`,
+                  width: 10, height: 10,
+                  transform: 'translate(-50%, -50%)',
+                  borderColor: addMode ? 'rgba(249,115,22,0.9)' : 'rgba(22,163,74,0.7)',
+                  background: 'transparent',
+                }} />
+                {/* Koordinaten-Anzeige */}
+                <div className="absolute text-xs font-mono px-1 rounded" style={{
+                  left: `${crosshair.x}%`,
+                  top: `${crosshair.y}%`,
+                  transform: 'translate(8px, -20px)',
+                  color: addMode ? 'rgb(194,65,12)' : 'rgb(22,101,52)',
+                  background: 'rgba(255,255,255,0.8)',
+                }}>
+                  {crosshair.x.toFixed(0)}% / {crosshair.y.toFixed(0)}%
+                </div>
+              </div>
+            )}
+
+            {/* POI Marker */}
+            {pois?.map(poi => (
+              <PoiMarker
+                key={poi.id}
+                poi={poi}
+                moveMode={moveMode}
+                isSelected={selected?.id === poi.id}
+                onSelect={() => { if (!moveMode) setSelected(poi) }}
+                onDragMove={async (x, y) => db.pois.update(poi.id, { x_position: x, y_position: y })}
+                mapRef={mapRef}
+              />
+            ))}
+          </div>
+
+          {/* Neuer POI Form */}
+          {newPoi && <NewPoiForm onSave={savePoi} onCancel={() => setNewPoi(null)} />}
+        </div>
+
+        {/* POI-Liste Sidebar */}
+        {showList && (
+          <div className="w-48 bg-white border border-green-200 rounded-xl p-3 flex flex-col gap-1 overflow-y-auto" style={{ maxHeight: 400 }}>
+            <p className="font-semibold text-green-800 text-sm mb-1">Alle POIs</p>
+            {pois?.length === 0 && <p className="text-gray-400 text-xs">Noch keine POIs</p>}
+            {pois?.map(poi => (
+              <button
+                key={poi.id}
+                onClick={() => setSelected(poi)}
+                className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-sm transition-colors
+                  ${selected?.id === poi.id ? 'bg-green-100 text-green-900 font-semibold' : 'hover:bg-gray-50 text-gray-700'}`}
+              >
+                <span style={{ fontSize: (poi.size || 28) * 0.6 + 'px' }}>{TYPE_ICONS[poi.type] || '📍'}</span>
+                <span className="flex-1 truncate">{poi.name}</span>
+                {poi.abbreviation && <span className="text-xs text-green-600 font-mono">{poi.abbreviation}</span>}
+              </button>
+            ))}
           </div>
         )}
-
-        {mapImg
-          ? <img src={mapImg} className="w-full h-full object-cover" alt="Gartenkarte" draggable={false} />
-          : <div className="flex items-center justify-center h-72 text-green-700 text-sm">Kein Luftbild — lade eines hoch oder klicke, um POIs zu setzen</div>
-        }
-
-        {pois?.map(poi => (
-          <PoiMarker
-            key={poi.id}
-            poi={poi}
-            moveMode={moveMode}
-            onSelect={() => { if (!moveMode) setSelected(poi) }}
-            onDragStart={() => setDraggingId(poi.id)}
-            onDragMove={async (x, y) => {
-              await db.pois.update(poi.id, { x_position: x, y_position: y })
-            }}
-            mapRef={mapRef}
-          />
-        ))}
       </div>
 
-      {newPoi && <NewPoiForm onSave={savePoi} onCancel={() => setNewPoi(null)} />}
-
+      {/* POI Detailansicht als Panel */}
       {selected && (
-        <PoiDetail poi={selected} onClose={() => setSelected(null)} />
+        <PoiDetail
+          poi={selected}
+          onClose={() => setSelected(null)}
+          onOpenLog={onOpenLog}
+        />
       )}
     </div>
   )
 }
 
-function PoiMarker({ poi, moveMode, onSelect, onDragMove, mapRef }) {
+function PoiMarker({ poi, moveMode, isSelected, onSelect, onDragMove, mapRef }) {
   const dragRef = useRef(false)
+  const size = poi.size || 28
 
   function handleMouseDown(e) {
     if (!moveMode) return
     e.preventDefault()
+    e.stopPropagation()
     dragRef.current = true
 
     function onMove(ev) {
@@ -161,7 +213,6 @@ function PoiMarker({ poi, moveMode, onSelect, onDragMove, mapRef }) {
       const y = Math.min(100, Math.max(0, ((clientY - rect.top) / rect.height * 100))).toFixed(1)
       onDragMove(x, y)
     }
-
     function onUp() {
       dragRef.current = false
       window.removeEventListener('mousemove', onMove)
@@ -169,14 +220,11 @@ function PoiMarker({ poi, moveMode, onSelect, onDragMove, mapRef }) {
       window.removeEventListener('touchmove', onMove)
       window.removeEventListener('touchend', onUp)
     }
-
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
     window.addEventListener('touchmove', onMove, { passive: true })
     window.addEventListener('touchend', onUp)
   }
-
-  const size = poi.size || 28
 
   return (
     <div
@@ -187,28 +235,31 @@ function PoiMarker({ poi, moveMode, onSelect, onDragMove, mapRef }) {
         transform: 'translate(-50%, -50%)',
         cursor: moveMode ? 'grab' : 'pointer',
         userSelect: 'none',
+        zIndex: isSelected ? 15 : 10,
       }}
       onMouseDown={handleMouseDown}
       onTouchStart={handleMouseDown}
       onClick={e => { e.stopPropagation(); if (!moveMode) onSelect() }}
     >
-      {/* Kürzel über dem Symbol */}
       {poi.abbreviation && (
         <span
-          className="bg-white/90 text-green-900 font-bold rounded px-1 leading-tight mb-0.5 shadow"
+          className="bg-white/90 text-green-900 font-bold rounded px-1 leading-tight mb-0.5 shadow-sm"
           style={{ fontSize: Math.max(9, size * 0.4) + 'px' }}
         >
           {poi.abbreviation}
         </span>
       )}
-      {/* Symbol */}
       <span
-        className={`drop-shadow transition-transform ${moveMode ? 'hover:scale-110' : 'hover:scale-125'}`}
         style={{ fontSize: size + 'px', lineHeight: 1 }}
+        className={`drop-shadow-md transition-transform ${isSelected ? 'scale-125' : 'hover:scale-110'}`}
         title={poi.name}
       >
         {TYPE_ICONS[poi.type] || '📍'}
       </span>
+      {isSelected && (
+        <div className="absolute inset-0 rounded-full ring-2 ring-orange-400 ring-offset-1 pointer-events-none"
+          style={{ transform: 'scale(1.5)' }} />
+      )}
     </div>
   )
 }
@@ -220,35 +271,20 @@ function NewPoiForm({ onSave, onCancel }) {
   const [size, setSize] = useState(28)
 
   return (
-    <div className="bg-white rounded-xl border border-green-200 p-4 flex flex-col gap-3">
-      <p className="font-semibold text-green-800">Neuer POI</p>
+    <div className="mt-3 bg-white rounded-xl border border-orange-200 p-4 flex flex-col gap-3">
+      <p className="font-semibold text-orange-700">📍 Neuer POI — Position gewählt</p>
       <div className="grid grid-cols-2 gap-2">
-        <input
-          className="border rounded px-3 py-1.5 text-sm col-span-2"
-          placeholder="Name (z.B. Olivenbaum Nord)"
-          value={name}
-          onChange={e => setName(e.target.value)}
-        />
+        <input className="border rounded px-3 py-1.5 text-sm col-span-2" placeholder="Name (z.B. Olivenbaum Nord)" value={name} onChange={e => setName(e.target.value)} autoFocus />
         <select className="border rounded px-3 py-1.5 text-sm" value={type} onChange={e => setType(e.target.value)}>
           <option value="baum">🌳 Baum</option>
           <option value="gebäude">🏡 Gebäude</option>
           <option value="beet">🥕 Beet</option>
         </select>
-        <input
-          className="border rounded px-3 py-1.5 text-sm"
-          placeholder="Kürzel (z.B. OB1, GH)"
-          maxLength={5}
-          value={abbreviation}
-          onChange={e => setAbbreviation(e.target.value.toUpperCase())}
-        />
+        <input className="border rounded px-3 py-1.5 text-sm" placeholder="Kürzel z.B. OB1, GH" maxLength={5} value={abbreviation} onChange={e => setAbbreviation(e.target.value.toUpperCase())} />
       </div>
       <div className="flex items-center gap-3">
         <label className="text-sm text-gray-600 whitespace-nowrap">Symbolgröße:</label>
-        <input
-          type="range" min={16} max={56} value={size}
-          onChange={e => setSize(Number(e.target.value))}
-          className="flex-1"
-        />
+        <input type="range" min={16} max={56} value={size} onChange={e => setSize(Number(e.target.value))} className="flex-1" />
         <span style={{ fontSize: size + 'px', lineHeight: 1 }}>{TYPE_ICONS[type] || '📍'}</span>
       </div>
       <div className="flex gap-2">
@@ -259,9 +295,10 @@ function NewPoiForm({ onSave, onCancel }) {
   )
 }
 
-function PoiDetail({ poi, onClose }) {
+function PoiDetail({ poi, onClose, onOpenLog }) {
   const cultures = useLiveQuery(() => db.cultures.where('poi_id').equals(poi.id).toArray(), [poi.id])
   const photos = useLiveQuery(() => db.photos.where('poi_id').equals(poi.id).toArray(), [poi.id])
+  const logs = useLiveQuery(() => db.logs.where('poi_id').equals(poi.id).reverse().sortBy('date'), [poi.id])
 
   const [showAddCulture, setShowAddCulture] = useState(false)
   const [cultureName, setCultureName] = useState('')
@@ -270,67 +307,88 @@ function PoiDetail({ poi, onClose }) {
   async function addCulture() {
     if (!cultureName.trim()) return
     await db.cultures.add({ poi_id: poi.id, plant_name: cultureName, status: 'gepflanzt', planting_date: new Date().toISOString().slice(0, 10), notes: '' })
-    setCultureName('')
-    setShowAddCulture(false)
+    setCultureName(''); setShowAddCulture(false)
   }
 
   async function addPhoto(e) {
-    const file = e.target.files[0]
-    if (!file) return
+    const file = e.target.files[0]; if (!file) return
     const reader = new FileReader()
-    reader.onload = async ev => {
-      await db.photos.add({ poi_id: poi.id, culture_id: null, date: new Date().toISOString().slice(0, 10), image_data: ev.target.result })
-    }
+    reader.onload = async ev => await db.photos.add({ poi_id: poi.id, culture_id: null, date: new Date().toISOString().slice(0, 10), image_data: ev.target.result })
     reader.readAsDataURL(file)
-  }
-
-  async function updateSize(s) {
-    setEditSize(s)
-    await db.pois.update(poi.id, { size: s })
   }
 
   async function deletePoi() {
     if (!confirm(`"${poi.name}" wirklich löschen?`)) return
-    await db.pois.delete(poi.id)
-    onClose()
+    await db.pois.delete(poi.id); onClose()
   }
 
   return (
-    <div className="bg-white rounded-xl border border-green-200 p-4 flex flex-col gap-4">
+    <div className="bg-white rounded-xl border-2 border-green-300 p-4 flex flex-col gap-4 shadow-lg">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h2 className="font-bold text-green-800 text-lg">
-          <span style={{ fontSize: editSize + 'px' }}>{TYPE_ICONS[poi.type]}</span> {poi.name}
-          {poi.abbreviation && <span className="ml-2 text-sm bg-green-100 text-green-700 px-2 py-0.5 rounded font-mono">{poi.abbreviation}</span>}
-        </h2>
-        <button onClick={onClose}><X size={18} /></button>
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize: editSize + 'px' }}>{TYPE_ICONS[poi.type]}</span>
+          <div>
+            <h2 className="font-bold text-green-800 text-base leading-tight">{poi.name}</h2>
+            {poi.abbreviation && <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-mono">{poi.abbreviation}</span>}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => onOpenLog && onOpenLog(poi)}
+            className="flex items-center gap-1 bg-green-700 text-white px-3 py-1.5 rounded text-sm hover:bg-green-800"
+          >
+            <BookOpen size={14} /> Logbuch
+          </button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
       </div>
 
-      {/* Größe anpassen */}
+      {/* Größe */}
       <div className="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2">
         <label className="text-xs text-gray-500 whitespace-nowrap">Symbolgröße:</label>
-        <input type="range" min={16} max={56} value={editSize} onChange={e => updateSize(Number(e.target.value))} className="flex-1" />
-        <span style={{ fontSize: editSize + 'px', lineHeight: 1 }}>{TYPE_ICONS[poi.type]}</span>
+        <input type="range" min={16} max={56} value={editSize}
+          onChange={e => { setEditSize(Number(e.target.value)); db.pois.update(poi.id, { size: Number(e.target.value) }) }}
+          className="flex-1" />
+        <span style={{ fontSize: editSize + 'px' }}>{TYPE_ICONS[poi.type]}</span>
       </div>
 
-      <section>
-        <div className="flex items-center justify-between mb-2">
-          <p className="font-semibold text-sm text-gray-600">Kulturen</p>
-          <button onClick={() => setShowAddCulture(v => !v)} className="text-green-700 text-xs border border-green-300 px-2 py-0.5 rounded">+ Hinzufügen</button>
-        </div>
-        {showAddCulture && (
-          <div className="flex gap-2 mb-2">
-            <input className="border rounded px-2 py-1 text-sm flex-1" placeholder="Pflanze (z.B. Tomate San Marzano)" value={cultureName} onChange={e => setCultureName(e.target.value)} />
-            <button onClick={addCulture} className="bg-green-700 text-white px-3 py-1 rounded text-sm">OK</button>
+      <div className="grid grid-cols-2 gap-4">
+        {/* Kulturen */}
+        <section>
+          <div className="flex items-center justify-between mb-2">
+            <p className="font-semibold text-sm text-gray-600">Kulturen</p>
+            <button onClick={() => setShowAddCulture(v => !v)} className="text-green-700 text-xs border border-green-300 px-2 py-0.5 rounded">+</button>
           </div>
-        )}
-        <div className="flex flex-wrap gap-2">
-          {cultures?.map(c => (
-            <span key={c.id} className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">{c.plant_name} · {c.status}</span>
-          ))}
-          {!cultures?.length && <span className="text-gray-400 text-sm">Noch keine Kulturen</span>}
-        </div>
-      </section>
+          {showAddCulture && (
+            <div className="flex gap-1 mb-2">
+              <input className="border rounded px-2 py-1 text-xs flex-1" placeholder="Pflanze" value={cultureName} onChange={e => setCultureName(e.target.value)} />
+              <button onClick={addCulture} className="bg-green-700 text-white px-2 py-1 rounded text-xs">OK</button>
+            </div>
+          )}
+          <div className="flex flex-col gap-1">
+            {cultures?.map(c => (
+              <span key={c.id} className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">{c.plant_name} · {c.status}</span>
+            ))}
+            {!cultures?.length && <span className="text-gray-400 text-xs">Noch keine</span>}
+          </div>
+        </section>
 
+        {/* Letzte Log-Einträge */}
+        <section>
+          <p className="font-semibold text-sm text-gray-600 mb-2">Letzte Aktivitäten</p>
+          <div className="flex flex-col gap-1">
+            {logs?.slice(0, 3).map(l => (
+              <div key={l.id} className="text-xs text-gray-600 bg-gray-50 rounded px-2 py-1">
+                <span className="text-gray-400">{l.date}</span> · {l.action_type}
+              </div>
+            ))}
+            {!logs?.length && <span className="text-gray-400 text-xs">Noch keine Einträge</span>}
+          </div>
+        </section>
+      </div>
+
+      {/* Fotos */}
       <section>
         <div className="flex items-center justify-between mb-2">
           <p className="font-semibold text-sm text-gray-600">Fotos</p>
@@ -339,9 +397,7 @@ function PoiDetail({ poi, onClose }) {
           </label>
         </div>
         <div className="flex gap-2 overflow-x-auto">
-          {photos?.map(p => (
-            <img key={p.id} src={p.image_data} alt={p.date} className="h-20 w-20 object-cover rounded-lg border flex-shrink-0" />
-          ))}
+          {photos?.map(p => <img key={p.id} src={p.image_data} alt={p.date} className="h-20 w-20 object-cover rounded-lg border flex-shrink-0" />)}
           {!photos?.length && <span className="text-gray-400 text-sm">Noch keine Fotos</span>}
         </div>
       </section>

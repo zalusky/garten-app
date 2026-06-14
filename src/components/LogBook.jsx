@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db'
-import { Plus } from 'lucide-react'
+import { Plus, X } from 'lucide-react'
 
 const ACTION_LABELS = {
   düngung:  '🌱 Düngung',
@@ -11,16 +11,30 @@ const ACTION_LABELS = {
   sonstiges:'📝 Sonstiges',
 }
 
-export default function LogBook() {
+export default function LogBook({ filterPoi, onClearFilter }) {
   const pois = useLiveQuery(() => db.pois.toArray(), [])
   const recipes = useLiveQuery(() => db.recipes.toArray(), [])
-  const logs = useLiveQuery(() => db.logs.orderBy('date').reverse().toArray(), [])
-  const [form, setForm] = useState({ open: false, poi_id: '', action_type: 'düngung', date: new Date().toISOString().slice(0,10), recipe_id: '', harvest_qty: '', harvest_quality: '', sick_type: '', treatment: '', success: '', notes: '' })
+  const allLogs = useLiveQuery(() => db.logs.orderBy('date').reverse().toArray(), [])
+
+  const logs = filterPoi
+    ? allLogs?.filter(l => l.poi_id === filterPoi.id)
+    : allLogs
+
+  const [form, setForm] = useState({
+    open: false, poi_id: '', action_type: 'düngung',
+    date: new Date().toISOString().slice(0,10),
+    recipe_id: '', harvest_qty: '', harvest_quality: '',
+    sick_type: '', treatment: '', success: '', notes: ''
+  })
+
+  useEffect(() => {
+    if (filterPoi) setForm(f => ({ ...f, poi_id: String(filterPoi.id) }))
+  }, [filterPoi])
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
 
   async function save() {
-    const entry = {
+    await db.logs.add({
       poi_id: Number(form.poi_id) || null,
       culture_id: null,
       date: form.date,
@@ -32,15 +46,22 @@ export default function LogBook() {
       treatment: form.treatment || null,
       success: form.success || null,
       notes: form.notes || null,
-    }
-    await db.logs.add(entry)
+    })
     setForm(f => ({ ...f, open: false }))
   }
 
   return (
     <div className="p-4 flex flex-col gap-4">
       <div className="flex justify-between items-center">
-        <h2 className="font-bold text-green-800 text-lg">Logbuch</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="font-bold text-green-800 text-lg">Logbuch</h2>
+          {filterPoi && (
+            <span className="flex items-center gap-1 bg-orange-100 text-orange-700 text-xs px-2 py-1 rounded-full">
+              {filterPoi.name}
+              <button onClick={onClearFilter}><X size={12} /></button>
+            </span>
+          )}
+        </div>
         <button onClick={() => set('open', true)} className="flex items-center gap-1 bg-green-700 text-white px-3 py-1.5 rounded text-sm">
           <Plus size={14} /> Eintrag
         </button>
@@ -105,7 +126,11 @@ export default function LogBook() {
             </div>
           )
         })}
-        {!logs?.length && <p className="text-gray-400 text-sm text-center py-8">Noch keine Einträge</p>}
+        {!logs?.length && (
+          <p className="text-gray-400 text-sm text-center py-8">
+            {filterPoi ? `Noch keine Einträge für "${filterPoi.name}"` : 'Noch keine Einträge'}
+          </p>
+        )}
       </div>
     </div>
   )
