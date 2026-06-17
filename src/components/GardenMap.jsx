@@ -1,11 +1,11 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db'
-import { Plus, X, Move, BookOpen, List } from 'lucide-react'
+import { Plus, X, Move, BookOpen, List, ChevronRight, Home } from 'lucide-react'
 
 const TYPE_ICONS = { baum: '🌳', gebäude: '🏡', beet: '🥕' }
 
-function GridCanvas() {
+function GridCanvas({ label }) {
   return (
     <div className="w-full h-72 relative" style={{ background: '#f0f7e6' }}>
       <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
@@ -22,16 +22,75 @@ function GridCanvas() {
       </svg>
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         <div className="text-center">
-          <p className="text-green-700 text-sm font-medium">Kein Luftbild vorhanden</p>
-          <p className="text-green-600 text-xs mt-1">Lade ein Luftbild hoch oder setze POIs direkt auf diesem Raster</p>
+          <p className="text-green-700 text-sm font-medium">{label || 'Kein Bild vorhanden'}</p>
+          <p className="text-green-600 text-xs mt-1">Lade ein Foto hoch oder setze POIs direkt auf diesem Raster</p>
         </div>
       </div>
     </div>
   )
 }
 
+// Haupt-Export: verwaltet den Navigations-Stack
 export default function GardenMap({ onOpenLog }) {
-  const [mapImg, setMapImg] = useState(() => localStorage.getItem('gartenMapImg') || null)
+  // navStack = Array von POI-IDs, die wir "betreten" haben
+  // [] = Hauptkarte, [5] = Innenansicht von POI 5, [5, 12] = Sub-Ebene von POI 12 in POI 5
+  const [navStack, setNavStack] = useState([])
+
+  const allPois = useLiveQuery(() => db.pois.toArray(), [])
+
+  // Aktueller Parent: null = Hauptkarte, sonst POI-ID
+  const currentParentId = navStack.length > 0 ? navStack[navStack.length - 1] : null
+  const currentParentPoi = allPois?.find(p => p.id === currentParentId) || null
+
+  // Breadcrumb-Pfad aufbauen
+  const breadcrumb = navStack.map(id => allPois?.find(p => p.id === id)).filter(Boolean)
+
+  function drillInto(poi) {
+    setNavStack(s => [...s, poi.id])
+  }
+
+  function navigateTo(index) {
+    setNavStack(s => s.slice(0, index))
+  }
+
+  return (
+    <div className="flex flex-col gap-0">
+      {/* Breadcrumb Navigation */}
+      {navStack.length > 0 && (
+        <div className="flex items-center gap-1 px-4 py-2 bg-green-800 text-white text-sm overflow-x-auto">
+          <button onClick={() => setNavStack([])} className="flex items-center gap-1 hover:text-green-300">
+            <Home size={14} /> Hauptkarte
+          </button>
+          {breadcrumb.map((poi, i) => (
+            <span key={poi.id} className="flex items-center gap-1">
+              <ChevronRight size={14} className="text-green-400" />
+              <button
+                onClick={() => navigateTo(i + 1)}
+                className={`hover:text-green-300 ${i === breadcrumb.length - 1 ? 'text-white font-semibold' : 'text-green-300'}`}
+              >
+                {TYPE_ICONS[poi.type]} {poi.name}
+                {poi.abbreviation && <span className="ml-1 text-xs opacity-70">({poi.abbreviation})</span>}
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <MapLevel
+        parentId={currentParentId}
+        parentPoi={currentParentPoi}
+        allPois={allPois}
+        onDrillInto={drillInto}
+        onOpenLog={onOpenLog}
+      />
+    </div>
+  )
+}
+
+// Eine Kartenebene (Hauptkarte oder Innenansicht eines Gebäudes/Beetes)
+function MapLevel({ parentId, parentPoi, allPois, onDrillInto, onOpenLog }) {
+  const imgKey = parentId ? `gartenMapImg_poi_${parentId}` : 'gartenMapImg'
+  const [mapImg, setMapImg] = useState(() => localStorage.getItem(imgKey) || null)
   const [addMode, setAddMode] = useState(false)
   const [moveMode, setMoveMode] = useState(false)
   const [showList, setShowList] = useState(false)
@@ -40,7 +99,10 @@ export default function GardenMap({ onOpenLog }) {
   const [crosshair, setCrosshair] = useState({ x: 50, y: 50, visible: false })
   const mapRef = useRef()
 
-  const pois = useLiveQuery(() => db.pois.toArray(), [])
+  // Nur POIs dieser Ebene anzeigen
+  const pois = allPois?.filter(p =>
+    parentId === null ? (p.parent_id === null || p.parent_id === undefined) : p.parent_id === parentId
+  )
 
   function getRelativePos(e) {
     const rect = mapRef.current.getBoundingClientRect()
@@ -71,7 +133,14 @@ export default function GardenMap({ onOpenLog }) {
 
   async function savePoi(name, type, abbreviation, size) {
     if (!name.trim()) return
-    await db.pois.add({ name, type, abbreviation: abbreviation || '', size: size || 28, x_position: newPoi.x, y_position: newPoi.y, parent_id: null })
+    await db.pois.add({
+      name, type,
+      abbreviation: abbreviation || '',
+      size: size || 28,
+      x_position: newPoi.x,
+      y_position: newPoi.y,
+      parent_id: parentId,   // ← verknüpft mit aktueller Ebene
+    })
     setNewPoi(null)
   }
 
@@ -79,16 +148,41 @@ export default function GardenMap({ onOpenLog }) {
     const file = e.target.files[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = ev => { localStorage.setItem('gartenMapImg', ev.target.result); setMapImg(ev.target.result) }
+    reader.onload = ev => {
+      localStorage.setItem(imgKey, ev.target.result)
+      setMapImg(ev.target.result)
+    }
     reader.readAsDataURL(file)
+  }
+
+  function handlePoiClick(poi) {
+    if (moveMode) return
+    // Gebäude und Beete können betreten werden (drill-down)
+    if (poi.type === 'gebäude' || poi.type === 'beet') {
+      setSelected(poi)
+    } else {
+      setSelected(poi)
+    }
   }
 
   return (
     <div className="p-4 flex flex-col gap-4">
+      {/* Info-Banner für Innenansicht */}
+      {parentPoi && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 flex items-center justify-between">
+          <span className="text-amber-800 text-sm">
+            <span className="text-lg mr-2">{TYPE_ICONS[parentPoi.type]}</span>
+            Innenansicht: <strong>{parentPoi.name}</strong>
+            {parentPoi.abbreviation && <span className="ml-1 text-amber-600">({parentPoi.abbreviation})</span>}
+          </span>
+          <span className="text-xs text-amber-600">POIs hier sind Sub-Elemente dieses Objekts</span>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="flex gap-2 items-center flex-wrap">
         <label className="cursor-pointer bg-green-700 text-white px-3 py-1.5 rounded text-sm hover:bg-green-800">
-          Luftbild hochladen
+          {parentPoi ? 'Innenfoto hochladen' : 'Luftbild hochladen'}
           <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
         </label>
         <button
@@ -107,15 +201,15 @@ export default function GardenMap({ onOpenLog }) {
           onClick={() => setShowList(v => !v)}
           className={`flex items-center gap-1 px-3 py-1.5 rounded text-sm ${showList ? 'bg-green-600 text-white' : 'bg-white border border-gray-300 text-gray-600'}`}
         >
-          <List size={14} /> POI-Liste
+          <List size={14} /> Liste
         </button>
-        {addMode && <span className="text-orange-600 text-sm font-medium">Fadenkreuz auf gewünschte Stelle → klicken</span>}
+        {addMode && <span className="text-orange-600 text-sm font-medium">Fadenkreuz auf Stelle → klicken</span>}
         {moveMode && <span className="text-blue-600 text-sm font-medium">POI anklicken & ziehen</span>}
       </div>
 
       <div className="flex gap-4">
         {/* Karte */}
-        <div className="flex-1 relative">
+        <div className="flex-1">
           <div
             ref={mapRef}
             onClick={handleMapClick}
@@ -127,42 +221,17 @@ export default function GardenMap({ onOpenLog }) {
             style={{ minHeight: 340, background: '#d4edba' }}
           >
             {mapImg
-              ? <img src={mapImg} className="w-full h-full object-cover" alt="Gartenkarte" draggable={false} />
-              : <GridCanvas />
+              ? <img src={mapImg} className="w-full h-full object-cover" alt="Karte" draggable={false} />
+              : <GridCanvas label={parentPoi ? `Kein Innenfoto für "${parentPoi.name}"` : undefined} />
             }
 
-            {/* Fadenkreuz — immer sichtbar beim Hovern */}
+            {/* Fadenkreuz */}
             {crosshair.visible && (
               <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 20 }}>
-                {/* horizontale Linie */}
-                <div className="absolute w-full" style={{
-                  top: `${crosshair.y}%`,
-                  height: '1px',
-                  background: addMode ? 'rgba(249,115,22,0.7)' : 'rgba(22,163,74,0.5)',
-                }} />
-                {/* vertikale Linie */}
-                <div className="absolute h-full" style={{
-                  left: `${crosshair.x}%`,
-                  width: '1px',
-                  background: addMode ? 'rgba(249,115,22,0.7)' : 'rgba(22,163,74,0.5)',
-                }} />
-                {/* Mittelpunkt */}
-                <div className="absolute rounded-full border-2" style={{
-                  left: `${crosshair.x}%`,
-                  top: `${crosshair.y}%`,
-                  width: 10, height: 10,
-                  transform: 'translate(-50%, -50%)',
-                  borderColor: addMode ? 'rgba(249,115,22,0.9)' : 'rgba(22,163,74,0.7)',
-                  background: 'transparent',
-                }} />
-                {/* Koordinaten-Anzeige */}
-                <div className="absolute text-xs font-mono px-1 rounded" style={{
-                  left: `${crosshair.x}%`,
-                  top: `${crosshair.y}%`,
-                  transform: 'translate(8px, -20px)',
-                  color: addMode ? 'rgb(194,65,12)' : 'rgb(22,101,52)',
-                  background: 'rgba(255,255,255,0.8)',
-                }}>
+                <div className="absolute w-full" style={{ top: `${crosshair.y}%`, height: '1px', background: addMode ? 'rgba(249,115,22,0.7)' : 'rgba(22,163,74,0.5)' }} />
+                <div className="absolute h-full" style={{ left: `${crosshair.x}%`, width: '1px', background: addMode ? 'rgba(249,115,22,0.7)' : 'rgba(22,163,74,0.5)' }} />
+                <div className="absolute rounded-full border-2" style={{ left: `${crosshair.x}%`, top: `${crosshair.y}%`, width: 10, height: 10, transform: 'translate(-50%,-50%)', borderColor: addMode ? 'rgba(249,115,22,0.9)' : 'rgba(22,163,74,0.7)', background: 'transparent' }} />
+                <div className="absolute text-xs font-mono px-1 rounded" style={{ left: `${crosshair.x}%`, top: `${crosshair.y}%`, transform: 'translate(8px,-20px)', color: addMode ? 'rgb(194,65,12)' : 'rgb(22,101,52)', background: 'rgba(255,255,255,0.8)' }}>
                   {crosshair.x.toFixed(0)}% / {crosshair.y.toFixed(0)}%
                 </div>
               </div>
@@ -175,21 +244,22 @@ export default function GardenMap({ onOpenLog }) {
                 poi={poi}
                 moveMode={moveMode}
                 isSelected={selected?.id === poi.id}
-                onSelect={() => { if (!moveMode) setSelected(poi) }}
+                onSelect={() => handlePoiClick(poi)}
                 onDragMove={async (x, y) => db.pois.update(poi.id, { x_position: x, y_position: y })}
                 mapRef={mapRef}
               />
             ))}
           </div>
 
-          {/* Neuer POI Form */}
-          {newPoi && <NewPoiForm onSave={savePoi} onCancel={() => setNewPoi(null)} />}
+          {newPoi && <NewPoiForm onSave={savePoi} onCancel={() => setNewPoi(null)} parentPoi={parentPoi} />}
         </div>
 
         {/* POI-Liste Sidebar */}
         {showList && (
           <div className="w-48 bg-white border border-green-200 rounded-xl p-3 flex flex-col gap-1 overflow-y-auto" style={{ maxHeight: 400 }}>
-            <p className="font-semibold text-green-800 text-sm mb-1">Alle POIs</p>
+            <p className="font-semibold text-green-800 text-sm mb-1">
+              {parentPoi ? `In: ${parentPoi.name}` : 'Alle POIs'}
+            </p>
             {pois?.length === 0 && <p className="text-gray-400 text-xs">Noch keine POIs</p>}
             {pois?.map(poi => (
               <button
@@ -207,12 +277,14 @@ export default function GardenMap({ onOpenLog }) {
         )}
       </div>
 
-      {/* POI Detailansicht als Panel */}
+      {/* POI Detail */}
       {selected && (
         <PoiDetail
           poi={selected}
           onClose={() => setSelected(null)}
           onOpenLog={onOpenLog}
+          onDrillInto={() => { setSelected(null); onDrillInto(selected) }}
+          canDrillInto={selected.type === 'gebäude' || selected.type === 'beet'}
         />
       )}
     </div>
@@ -225,10 +297,8 @@ function PoiMarker({ poi, moveMode, isSelected, onSelect, onDragMove, mapRef }) 
 
   function handleMouseDown(e) {
     if (!moveMode) return
-    e.preventDefault()
-    e.stopPropagation()
+    e.preventDefault(); e.stopPropagation()
     dragRef.current = true
-
     function onMove(ev) {
       if (!dragRef.current) return
       const rect = mapRef.current.getBoundingClientRect()
@@ -254,58 +324,49 @@ function PoiMarker({ poi, moveMode, isSelected, onSelect, onDragMove, mapRef }) 
   return (
     <div
       className="absolute flex flex-col items-center"
-      style={{
-        left: `${poi.x_position}%`,
-        top: `${poi.y_position}%`,
-        transform: 'translate(-50%, -50%)',
-        cursor: moveMode ? 'grab' : 'pointer',
-        userSelect: 'none',
-        zIndex: isSelected ? 15 : 10,
-      }}
+      style={{ left: `${poi.x_position}%`, top: `${poi.y_position}%`, transform: 'translate(-50%,-50%)', cursor: moveMode ? 'grab' : 'pointer', userSelect: 'none', zIndex: isSelected ? 15 : 10 }}
       onMouseDown={handleMouseDown}
       onTouchStart={handleMouseDown}
       onClick={e => { e.stopPropagation(); if (!moveMode) onSelect() }}
     >
       {poi.abbreviation && (
-        <span
-          className="bg-white/90 text-green-900 font-bold rounded px-1 leading-tight mb-0.5 shadow-sm"
-          style={{ fontSize: Math.max(9, size * 0.4) + 'px' }}
-        >
+        <span className="bg-white/90 text-green-900 font-bold rounded px-1 leading-tight mb-0.5 shadow-sm" style={{ fontSize: Math.max(9, size * 0.4) + 'px' }}>
           {poi.abbreviation}
         </span>
       )}
-      <span
-        style={{ fontSize: size + 'px', lineHeight: 1 }}
-        className={`drop-shadow-md transition-transform ${isSelected ? 'scale-125' : 'hover:scale-110'}`}
-        title={poi.name}
-      >
+      <span style={{ fontSize: size + 'px', lineHeight: 1 }} className={`drop-shadow-md transition-transform ${isSelected ? 'scale-125' : 'hover:scale-110'}`} title={poi.name}>
         {TYPE_ICONS[poi.type] || '📍'}
       </span>
+      {/* Drill-down Indikator für Gebäude/Beete */}
+      {(poi.type === 'gebäude' || poi.type === 'beet') && (
+        <span className="text-xs bg-white/80 text-green-700 rounded px-1 mt-0.5 leading-tight">↗ öffnen</span>
+      )}
       {isSelected && (
-        <div className="absolute inset-0 rounded-full ring-2 ring-orange-400 ring-offset-1 pointer-events-none"
-          style={{ transform: 'scale(1.5)' }} />
+        <div className="absolute inset-0 rounded-full ring-2 ring-orange-400 ring-offset-1 pointer-events-none" style={{ transform: 'scale(1.5)' }} />
       )}
     </div>
   )
 }
 
-function NewPoiForm({ onSave, onCancel }) {
+function NewPoiForm({ onSave, onCancel, parentPoi }) {
   const [name, setName] = useState('')
-  const [type, setType] = useState('baum')
+  const [type, setType] = useState(parentPoi?.type === 'gebäude' ? 'beet' : 'baum')
   const [abbreviation, setAbbreviation] = useState('')
   const [size, setSize] = useState(28)
 
   return (
     <div className="mt-3 bg-white rounded-xl border border-orange-200 p-4 flex flex-col gap-3">
-      <p className="font-semibold text-orange-700">📍 Neuer POI — Position gewählt</p>
+      <p className="font-semibold text-orange-700">
+        📍 Neuer POI {parentPoi ? `in "${parentPoi.name}"` : '— Hauptkarte'}
+      </p>
       <div className="grid grid-cols-2 gap-2">
-        <input className="border rounded px-3 py-1.5 text-sm col-span-2" placeholder="Name (z.B. Olivenbaum Nord)" value={name} onChange={e => setName(e.target.value)} autoFocus />
+        <input className="border rounded px-3 py-1.5 text-sm col-span-2" placeholder="Name" value={name} onChange={e => setName(e.target.value)} autoFocus />
         <select className="border rounded px-3 py-1.5 text-sm" value={type} onChange={e => setType(e.target.value)}>
           <option value="baum">🌳 Baum</option>
           <option value="gebäude">🏡 Gebäude</option>
           <option value="beet">🥕 Beet</option>
         </select>
-        <input className="border rounded px-3 py-1.5 text-sm" placeholder="Kürzel z.B. OB1, GH" maxLength={5} value={abbreviation} onChange={e => setAbbreviation(e.target.value.toUpperCase())} />
+        <input className="border rounded px-3 py-1.5 text-sm" placeholder="Kürzel z.B. GH1" maxLength={5} value={abbreviation} onChange={e => setAbbreviation(e.target.value.toUpperCase())} />
       </div>
       <div className="flex items-center gap-3">
         <label className="text-sm text-gray-600 whitespace-nowrap">Symbolgröße:</label>
@@ -320,10 +381,11 @@ function NewPoiForm({ onSave, onCancel }) {
   )
 }
 
-function PoiDetail({ poi, onClose, onOpenLog }) {
+function PoiDetail({ poi, onClose, onOpenLog, onDrillInto, canDrillInto }) {
   const cultures = useLiveQuery(() => db.cultures.where('poi_id').equals(poi.id).toArray(), [poi.id])
   const photos = useLiveQuery(() => db.photos.where('poi_id').equals(poi.id).toArray(), [poi.id])
   const logs = useLiveQuery(() => db.logs.where('poi_id').equals(poi.id).reverse().sortBy('date'), [poi.id])
+  const subPois = useLiveQuery(() => db.pois.where('parent_id').equals(poi.id).toArray(), [poi.id])
 
   const [showAddCulture, setShowAddCulture] = useState(false)
   const [cultureForm, setCultureForm] = useState({ plant_name: '', variety: '', status: 'gepflanzt', planting_date: new Date().toISOString().slice(0,10) })
@@ -361,17 +423,38 @@ function PoiDetail({ poi, onClose, onOpenLog }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => onOpenLog && onOpenLog(poi)}
-            className="flex items-center gap-1 bg-green-700 text-white px-3 py-1.5 rounded text-sm hover:bg-green-800"
-          >
+          {/* Drill-down Button für Gebäude/Beet */}
+          {canDrillInto && (
+            <button
+              onClick={onDrillInto}
+              className="flex items-center gap-1 bg-amber-600 text-white px-3 py-1.5 rounded text-sm hover:bg-amber-700"
+              title="Innenansicht öffnen"
+            >
+              🏠 Innenansicht
+            </button>
+          )}
+          <button onClick={() => onOpenLog && onOpenLog(poi)} className="flex items-center gap-1 bg-green-700 text-white px-3 py-1.5 rounded text-sm hover:bg-green-800">
             <BookOpen size={14} /> Logbuch
           </button>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
       </div>
 
-      {/* Größe */}
+      {/* Sub-POIs Vorschau */}
+      {subPois?.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          <p className="text-xs font-semibold text-amber-700 mb-1">Sub-Elemente ({subPois.length})</p>
+          <div className="flex flex-wrap gap-1">
+            {subPois.map(s => (
+              <span key={s.id} className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                {TYPE_ICONS[s.type]} {s.name} {s.abbreviation && `(${s.abbreviation})`}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Symbolgröße */}
       <div className="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2">
         <label className="text-xs text-gray-500 whitespace-nowrap">Symbolgröße:</label>
         <input type="range" min={16} max={56} value={editSize}
@@ -408,18 +491,18 @@ function PoiDetail({ poi, onClose, onOpenLog }) {
               <div key={c.id} className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-lg">
                 <span className="font-medium">{c.plant_name}</span>
                 {c.variety && <span className="text-green-600"> ({c.variety})</span>}
-                <span className="text-green-500 ml-1">· {c.status} {c.planting_date && `· ${c.planting_date}`}</span>
+                <span className="text-green-500 ml-1">· {c.status}</span>
               </div>
             ))}
             {!cultures?.length && <span className="text-gray-400 text-xs">Noch keine</span>}
           </div>
         </section>
 
-        {/* Letzte Log-Einträge */}
+        {/* Letzte Aktivitäten */}
         <section>
           <p className="font-semibold text-sm text-gray-600 mb-2">Letzte Aktivitäten</p>
           <div className="flex flex-col gap-1">
-            {logs?.slice(0, 3).map(l => (
+            {logs?.slice(0, 4).map(l => (
               <div key={l.id} className="text-xs text-gray-600 bg-gray-50 rounded px-2 py-1">
                 <span className="text-gray-400">{l.date}</span> · {l.action_type}
               </div>
@@ -434,7 +517,7 @@ function PoiDetail({ poi, onClose, onOpenLog }) {
         <div className="flex items-center justify-between mb-2">
           <p className="font-semibold text-sm text-gray-600">Fotos (chronologisch)</p>
           <div className="flex items-center gap-2">
-            <input type="date" className="border rounded px-2 py-0.5 text-xs" value={photoDate} onChange={e => setPhotoDate(e.target.value)} title="Datum des Fotos" />
+            <input type="date" className="border rounded px-2 py-0.5 text-xs" value={photoDate} onChange={e => setPhotoDate(e.target.value)} />
             <label className="text-green-700 text-xs border border-green-300 px-2 py-0.5 rounded cursor-pointer">
               + Foto <input type="file" accept="image/*" className="hidden" onChange={addPhoto} />
             </label>
