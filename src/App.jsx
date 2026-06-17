@@ -5,15 +5,19 @@ import RecipeBook from './components/RecipeBook'
 import SeedInventory from './components/SeedInventory'
 import CalendarView from './components/CalendarView'
 import BackupRestore from './components/BackupRestore'
-import { Map, BookOpen, FlaskConical, Sprout, CalendarDays, HardDrive } from 'lucide-react'
+import SoilTracker from './components/SoilTracker'
+import StatsView from './components/StatsView'
+import { Map, BookOpen, FlaskConical, Sprout, CalendarDays, HardDrive, TestTube, BarChart2 } from 'lucide-react'
 
 const TABS = [
-  { id: 'map',     label: 'Karte',    icon: Map },
-  { id: 'log',     label: 'Logbuch',  icon: BookOpen },
-  { id: 'recipes', label: 'Rezepte',  icon: FlaskConical },
-  { id: 'seeds',   label: 'Saatgut',  icon: Sprout },
-  { id: 'cal',     label: 'Kalender', icon: CalendarDays },
-  { id: 'backup',  label: 'Backup',   icon: HardDrive },
+  { id: 'map',     label: 'Karte',     icon: Map },
+  { id: 'log',     label: 'Logbuch',   icon: BookOpen },
+  { id: 'recipes', label: 'Rezepte',   icon: FlaskConical },
+  { id: 'seeds',   label: 'Saatgut',   icon: Sprout },
+  { id: 'soil',    label: 'Boden',     icon: TestTube },
+  { id: 'stats',   label: 'Charts',    icon: BarChart2 },
+  { id: 'cal',     label: 'Kalender',  icon: CalendarDays },
+  { id: 'backup',  label: 'Backup',    icon: HardDrive },
 ]
 
 export default function App() {
@@ -38,19 +42,21 @@ export default function App() {
         {tab === 'log'     && <LogBook filterPoi={logFilterPoi} onClearFilter={() => setLogFilterPoi(null)} />}
         {tab === 'recipes' && <RecipeBook />}
         {tab === 'seeds'   && <SeedInventory />}
+        {tab === 'soil'    && <SoilTracker />}
+        {tab === 'stats'   && <StatsView />}
         {tab === 'cal'     && <CalendarView />}
         {tab === 'backup'  && <BackupRestore />}
       </main>
 
-      <nav className="bg-white border-t border-green-200 flex sticky bottom-0">
+      <nav className="bg-white border-t border-green-200 flex sticky bottom-0 overflow-x-auto">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             onClick={() => { setTab(id); if (id !== 'log') setLogFilterPoi(null) }}
-            className={`flex-1 flex flex-col items-center py-2 text-xs gap-1 transition-colors
+            className={`flex-shrink-0 flex flex-col items-center py-2 px-3 text-xs gap-1 transition-colors
               ${tab === id ? 'text-green-700 font-semibold' : 'text-gray-500 hover:text-green-600'}`}
           >
-            <Icon size={20} />
+            <Icon size={18} />
             {label}
             {id === 'log' && logFilterPoi && <span className="w-1.5 h-1.5 bg-orange-400 rounded-full" />}
           </button>

@@ -5,6 +5,31 @@ import { Plus, X, Move, BookOpen, List } from 'lucide-react'
 
 const TYPE_ICONS = { baum: '🌳', gebäude: '🏡', beet: '🥕' }
 
+function GridCanvas() {
+  return (
+    <div className="w-full h-72 relative" style={{ background: '#f0f7e6' }}>
+      <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#c6dfb0" strokeWidth="0.5"/>
+          </pattern>
+          <pattern id="grid10" width="200" height="200" patternUnits="userSpaceOnUse">
+            <rect width="200" height="200" fill="url(#grid)"/>
+            <path d="M 200 0 L 0 0 0 200" fill="none" stroke="#a3c47a" strokeWidth="1"/>
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#grid10)" />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="text-center">
+          <p className="text-green-700 text-sm font-medium">Kein Luftbild vorhanden</p>
+          <p className="text-green-600 text-xs mt-1">Lade ein Luftbild hoch oder setze POIs direkt auf diesem Raster</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function GardenMap({ onOpenLog }) {
   const [mapImg, setMapImg] = useState(() => localStorage.getItem('gartenMapImg') || null)
   const [addMode, setAddMode] = useState(false)
@@ -103,7 +128,7 @@ export default function GardenMap({ onOpenLog }) {
           >
             {mapImg
               ? <img src={mapImg} className="w-full h-full object-cover" alt="Gartenkarte" draggable={false} />
-              : <div className="flex items-center justify-center h-72 text-green-700 text-sm">Kein Luftbild — lade eines hoch oder klicke, um POIs zu setzen</div>
+              : <GridCanvas />
             }
 
             {/* Fadenkreuz — immer sichtbar beim Hovern */}
@@ -301,19 +326,21 @@ function PoiDetail({ poi, onClose, onOpenLog }) {
   const logs = useLiveQuery(() => db.logs.where('poi_id').equals(poi.id).reverse().sortBy('date'), [poi.id])
 
   const [showAddCulture, setShowAddCulture] = useState(false)
-  const [cultureName, setCultureName] = useState('')
+  const [cultureForm, setCultureForm] = useState({ plant_name: '', variety: '', status: 'gepflanzt', planting_date: new Date().toISOString().slice(0,10) })
   const [editSize, setEditSize] = useState(poi.size || 28)
+  const [photoDate, setPhotoDate] = useState(new Date().toISOString().slice(0,10))
 
   async function addCulture() {
-    if (!cultureName.trim()) return
-    await db.cultures.add({ poi_id: poi.id, plant_name: cultureName, status: 'gepflanzt', planting_date: new Date().toISOString().slice(0, 10), notes: '' })
-    setCultureName(''); setShowAddCulture(false)
+    if (!cultureForm.plant_name.trim()) return
+    await db.cultures.add({ poi_id: poi.id, ...cultureForm, notes: '' })
+    setCultureForm({ plant_name: '', variety: '', status: 'gepflanzt', planting_date: new Date().toISOString().slice(0,10) })
+    setShowAddCulture(false)
   }
 
   async function addPhoto(e) {
     const file = e.target.files[0]; if (!file) return
     const reader = new FileReader()
-    reader.onload = async ev => await db.photos.add({ poi_id: poi.id, culture_id: null, date: new Date().toISOString().slice(0, 10), image_data: ev.target.result })
+    reader.onload = async ev => await db.photos.add({ poi_id: poi.id, culture_id: null, date: photoDate, image_data: ev.target.result })
     reader.readAsDataURL(file)
   }
 
@@ -361,14 +388,28 @@ function PoiDetail({ poi, onClose, onOpenLog }) {
             <button onClick={() => setShowAddCulture(v => !v)} className="text-green-700 text-xs border border-green-300 px-2 py-0.5 rounded">+</button>
           </div>
           {showAddCulture && (
-            <div className="flex gap-1 mb-2">
-              <input className="border rounded px-2 py-1 text-xs flex-1" placeholder="Pflanze" value={cultureName} onChange={e => setCultureName(e.target.value)} />
-              <button onClick={addCulture} className="bg-green-700 text-white px-2 py-1 rounded text-xs">OK</button>
+            <div className="flex flex-col gap-1 mb-2 bg-gray-50 rounded-lg p-2">
+              <input className="border rounded px-2 py-1 text-xs" placeholder="Pflanze (z.B. Tomate San Marzano)" value={cultureForm.plant_name} onChange={e => setCultureForm(f => ({...f, plant_name: e.target.value}))} />
+              <input className="border rounded px-2 py-1 text-xs" placeholder="Sorte (optional)" value={cultureForm.variety} onChange={e => setCultureForm(f => ({...f, variety: e.target.value}))} />
+              <div className="flex gap-1">
+                <select className="border rounded px-2 py-1 text-xs flex-1" value={cultureForm.status} onChange={e => setCultureForm(f => ({...f, status: e.target.value}))}>
+                  <option value="geplant">🗓 Geplant</option>
+                  <option value="gepflanzt">🌱 Gepflanzt</option>
+                  <option value="geerntet">🧺 Geerntet</option>
+                  <option value="entfernt">❌ Entfernt</option>
+                </select>
+                <input type="date" className="border rounded px-2 py-1 text-xs flex-1" value={cultureForm.planting_date} onChange={e => setCultureForm(f => ({...f, planting_date: e.target.value}))} />
+              </div>
+              <button onClick={addCulture} className="bg-green-700 text-white px-2 py-1 rounded text-xs">Speichern</button>
             </div>
           )}
           <div className="flex flex-col gap-1">
             {cultures?.map(c => (
-              <span key={c.id} className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">{c.plant_name} · {c.status}</span>
+              <div key={c.id} className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-lg">
+                <span className="font-medium">{c.plant_name}</span>
+                {c.variety && <span className="text-green-600"> ({c.variety})</span>}
+                <span className="text-green-500 ml-1">· {c.status} {c.planting_date && `· ${c.planting_date}`}</span>
+              </div>
             ))}
             {!cultures?.length && <span className="text-gray-400 text-xs">Noch keine</span>}
           </div>
@@ -388,16 +429,24 @@ function PoiDetail({ poi, onClose, onOpenLog }) {
         </section>
       </div>
 
-      {/* Fotos */}
+      {/* Fotos chronologisch */}
       <section>
         <div className="flex items-center justify-between mb-2">
-          <p className="font-semibold text-sm text-gray-600">Fotos</p>
-          <label className="text-green-700 text-xs border border-green-300 px-2 py-0.5 rounded cursor-pointer">
-            + Foto <input type="file" accept="image/*" className="hidden" onChange={addPhoto} />
-          </label>
+          <p className="font-semibold text-sm text-gray-600">Fotos (chronologisch)</p>
+          <div className="flex items-center gap-2">
+            <input type="date" className="border rounded px-2 py-0.5 text-xs" value={photoDate} onChange={e => setPhotoDate(e.target.value)} title="Datum des Fotos" />
+            <label className="text-green-700 text-xs border border-green-300 px-2 py-0.5 rounded cursor-pointer">
+              + Foto <input type="file" accept="image/*" className="hidden" onChange={addPhoto} />
+            </label>
+          </div>
         </div>
         <div className="flex gap-2 overflow-x-auto">
-          {photos?.map(p => <img key={p.id} src={p.image_data} alt={p.date} className="h-20 w-20 object-cover rounded-lg border flex-shrink-0" />)}
+          {[...(photos || [])].sort((a,b) => a.date?.localeCompare(b.date)).map(p => (
+            <div key={p.id} className="flex flex-col items-center flex-shrink-0">
+              <img src={p.image_data} alt={p.date} className="h-20 w-20 object-cover rounded-lg border" />
+              <span className="text-xs text-gray-400 mt-1">{p.date}</span>
+            </div>
+          ))}
           {!photos?.length && <span className="text-gray-400 text-sm">Noch keine Fotos</span>}
         </div>
       </section>

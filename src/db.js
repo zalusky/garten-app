@@ -19,7 +19,7 @@ db.version(2).stores({
   recipes:   '++id, title',
   logs:      '++id, poi_id, culture_id, date, action_type, recipe_id',
   seeds:     '++id, plant_name, variety, expiry_date',
-  soil:      '++id, poi_id, date',
+  soil:      '++id, poi_id, date, ph, nitrogen, phosphorus, potassium',
 }).upgrade(tx => {
   return tx.pois.toCollection().modify(poi => {
     if (poi.abbreviation === undefined) poi.abbreviation = ''
