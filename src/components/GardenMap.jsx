@@ -1,35 +1,28 @@
 import { useState, useRef, useEffect } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db'
-import { Plus, X, Move, BookOpen, List, ChevronRight, Home, FolderOpen, Trash2 } from 'lucide-react'
+import { X, BookOpen, ChevronRight, Home, FolderOpen } from 'lucide-react'
 import ExplorerPanel from './ExplorerPanel'
 
 const TYPE_ICONS = { baum: '🌳', gebäude: '🏡', beet: '🥕' }
 
-// --- localStorage multi-view helpers ---
 function loadViews(imgKey) {
   try {
     const raw = localStorage.getItem(imgKey)
     if (!raw) return []
     if (raw.startsWith('[')) return JSON.parse(raw)
-    return [{ name: 'Ansicht 1', data: raw }]   // legacy single-image migration
-  } catch {
-    return []
-  }
+    return [{ name: 'Ansicht 1', data: raw }]
+  } catch { return [] }
 }
 
-// Gibt true zurück wenn erfolgreich, false wenn Speicherlimit überschritten
 function saveViews(imgKey, views) {
   try {
     if (views.length === 0) { localStorage.removeItem(imgKey); return true }
     localStorage.setItem(imgKey, JSON.stringify(views))
     return true
-  } catch {
-    return false   // QuotaExceededError (Mobile ~5 MB Limit)
-  }
+  } catch { return false }
 }
 
-// --- GridCanvas Fallback ---
 function GridCanvas({ label }) {
   return (
     <div className="w-full h-72 relative" style={{ background: '#f0f7e6' }}>
@@ -55,8 +48,18 @@ function GridCanvas({ label }) {
   )
 }
 
-// --- Haupt-Export ---
-export default function GardenMap({ onOpenLog }) {
+// =============================================================================
+// GardenMap — Toolbar-State kommt als Props aus App.jsx (sticky bottom nav)
+// =============================================================================
+export default function GardenMap({
+  onOpenLog,
+  addMode, setAddMode,
+  moveMode, setMoveMode,
+  showList,
+  views, setViews,
+  activeViewIdx, setActiveViewIdx,
+  uploadRef,
+}) {
   const [navStack, setNavStack] = useState([])
   const [explorerOpen, setExplorerOpen] = useState(false)
   const [highlightedPoiId, setHighlightedPoiId] = useState(null)
@@ -65,14 +68,74 @@ export default function GardenMap({ onOpenLog }) {
   const highlightTimer = useRef(null)
   const resizeDragRef = useRef(false)
 
+  const [pendingImg, setPendingImg] = useState(null)
+  const [pendingName, setPendingName] = useState('')
+  const [uploadError, setUploadError] = useState(null)
+  const fileInputRef = useRef()
+
+  const allPois = useLiveQuery(() => db.pois.toArray(), [])
+
+  const currentParentId = navStack.length > 0 ? navStack[navStack.length - 1] : null
+  const currentParentPoi = allPois?.find(p => p.id === currentParentId) || null
+  const breadcrumb = navStack.map(id => allPois?.find(p => p.id === id)).filter(Boolean)
+  const imgKey = currentParentId ? `gartenMapImg_poi_${currentParentId}` : 'gartenMapImg'
+  const mapImg = views[Math.min(activeViewIdx, views.length - 1)]?.data || null
+
+  // Beim Navigationswechsel: Views neu laden, Modi zurücksetzen
+  useEffect(() => {
+    setViews(loadViews(imgKey))
+    setActiveViewIdx(0)
+    setAddMode(false)
+    setMoveMode(false)
+    setPendingImg(null)
+    setPendingName('')
+    setUploadError(null)
+  }, [imgKey])
+
+  // Upload-Trigger für App.jsx registrieren
+  useEffect(() => {
+    if (uploadRef) uploadRef.current = () => fileInputRef.current?.click()
+    return () => { if (uploadRef) uploadRef.current = null }
+  }, [uploadRef])
+
+  // History / Back-Button
+  useEffect(() => {
+    history.replaceState({ gartenSentinel: true }, '')
+    history.pushState({ gartenStack: [] }, '')
+    function onPop() {
+      if (history.state?.gartenSentinel) {
+        history.pushState({ gartenStack: [] }, '')
+        setNavStack([])
+        return
+      }
+      setNavStack(history.state?.gartenStack ?? [])
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
+  function goTo(newStack) {
+    setNavStack(newStack)
+    history.pushState({ gartenStack: newStack }, '')
+  }
+  function drillInto(poi) { goTo([...navStack, poi.id]) }
+  function navigateTo(index) { goTo(navStack.slice(0, index)) }
+
+  function handleExplorerNavigate(stack, poiId) {
+    goTo(stack)
+    setOpenedPoiId(poiId)
+    if (highlightTimer.current) clearTimeout(highlightTimer.current)
+    setHighlightedPoiId(poiId)
+    highlightTimer.current = setTimeout(() => setHighlightedPoiId(null), 3000)
+  }
+
   function startResize(e) {
     e.preventDefault()
     resizeDragRef.current = true
     function onMove(ev) {
       if (!resizeDragRef.current) return
       const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX
-      const newWidth = Math.min(480, Math.max(160, window.innerWidth - clientX))
-      setExplorerWidth(newWidth)
+      setExplorerWidth(Math.min(480, Math.max(160, window.innerWidth - clientX)))
     }
     function onUp() {
       resizeDragRef.current = false
@@ -87,170 +150,6 @@ export default function GardenMap({ onOpenLog }) {
     window.addEventListener('touchend', onUp)
   }
 
-  const allPois = useLiveQuery(() => db.pois.toArray(), [])
-
-  const currentParentId = navStack.length > 0 ? navStack[navStack.length - 1] : null
-  const currentParentPoi = allPois?.find(p => p.id === currentParentId) || null
-  const breadcrumb = navStack.map(id => allPois?.find(p => p.id === id)).filter(Boolean)
-
-  // Einheitliche Navigation: setzt State UND schreibt History-Eintrag
-  function goTo(newStack) {
-    setNavStack(newStack)
-    history.pushState({ gartenStack: newStack }, '')
-  }
-
-  function drillInto(poi) { goTo([...navStack, poi.id]) }
-  function navigateTo(index) { goTo(navStack.slice(0, index)) }
-
-  // History-Fundament beim Mount aufbauen:
-  // Entry 0 (Sentinel) → Entry 1 (Arbeitseintrag)
-  // Wenn Zurück den Sentinel trifft, sofort neuen Entry pushen → App verlässt nie
-  useEffect(() => {
-    history.replaceState({ gartenSentinel: true }, '')
-    history.pushState({ gartenStack: [] }, '')
-
-    function onPop() {
-      if (history.state?.gartenSentinel) {
-        // Boden erreicht: sofort neuen Entry schieben → kein App-Exit
-        history.pushState({ gartenStack: [] }, '')
-        setNavStack([])
-        return
-      }
-      setNavStack(history.state?.gartenStack ?? [])
-    }
-    window.addEventListener('popstate', onPop)
-    return () => window.removeEventListener('popstate', onPop)
-  }, [])
-
-  function handleExplorerNavigate(stack, poiId) {
-    setNavStack(stack)
-    setOpenedPoiId(poiId)
-    if (highlightTimer.current) clearTimeout(highlightTimer.current)
-    setHighlightedPoiId(poiId)
-    highlightTimer.current = setTimeout(() => setHighlightedPoiId(null), 3000)
-  }
-
-  return (
-    <div className="flex" style={{ height: 'calc(100vh - 112px)' }}>
-      {/* Linke Hauptfläche */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-0">
-        {/* Navigationsleiste (immer sichtbar, kein Scrollen) */}
-        <div className="flex items-center gap-1 px-4 py-2 bg-green-800 text-white text-sm overflow-x-auto flex-shrink-0">
-          {navStack.length > 0 ? (
-            <>
-              <button onClick={() => goTo([])} className="flex items-center gap-1 hover:text-green-300 flex-shrink-0">
-                <Home size={14} /> Hauptkarte
-              </button>
-              {breadcrumb.map((poi, i) => (
-                <span key={poi.id} className="flex items-center gap-1 flex-shrink-0">
-                  <ChevronRight size={14} className="text-green-400" />
-                  <button
-                    onClick={() => navigateTo(i + 1)}
-                    className={`hover:text-green-300 ${i === breadcrumb.length - 1 ? 'text-white font-semibold' : 'text-green-300'}`}
-                  >
-                    {TYPE_ICONS[poi.type]} {poi.name}
-                    {poi.abbreviation && <span className="ml-1 text-xs opacity-70">({poi.abbreviation})</span>}
-                  </button>
-                </span>
-              ))}
-            </>
-          ) : (
-            <span className="flex items-center gap-1"><Home size={14} /> Hauptkarte</span>
-          )}
-          <button
-            onClick={() => setExplorerOpen(v => !v)}
-            className={`ml-auto flex items-center gap-1 px-2 py-0.5 rounded text-xs flex-shrink-0
-              ${explorerOpen ? 'bg-green-600 text-white' : 'text-green-300 hover:text-white'}`}
-          >
-            <FolderOpen size={14} /> Explorer
-          </button>
-        </div>
-
-        {/* Karten-Inhalt — eigene Scrollleiste */}
-        <div className="flex-1 overflow-y-auto min-h-0">
-          <MapLevel
-            key={currentParentId ?? 'root'}
-            parentId={currentParentId}
-            parentPoi={currentParentPoi}
-            allPois={allPois}
-            onDrillInto={drillInto}
-            onOpenLog={onOpenLog}
-            highlightedPoiId={highlightedPoiId}
-            openedPoiId={openedPoiId}
-            onOpenedPoiHandled={() => setOpenedPoiId(null)}
-          />
-        </div>
-      </div>
-
-      {/* Explorer-Panel rechts — eigene Scrollleiste, bleibt fixiert */}
-      {explorerOpen && (
-        <div className="flex-shrink-0 flex overflow-y-auto" style={{ width: explorerWidth, borderLeft: '1px solid #bbf7d0' }}>
-          {/* Drag-Handle zum Breiteverändern */}
-          <div
-            className="flex-shrink-0 w-2 cursor-col-resize hover:bg-green-300 active:bg-green-400 transition-colors"
-            style={{ background: 'transparent' }}
-            onMouseDown={startResize}
-            onTouchStart={startResize}
-            title="Breite ziehen"
-          />
-          <div className="flex-1 min-w-0">
-            <ExplorerPanel
-              onClose={() => setExplorerOpen(false)}
-              onNavigate={handleExplorerNavigate}
-            />
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// --- MapLevel: eine Kartenebene ---
-function MapLevel({ parentId, parentPoi, allPois, onDrillInto, onOpenLog, highlightedPoiId, openedPoiId, onOpenedPoiHandled }) {
-  const imgKey = parentId ? `gartenMapImg_poi_${parentId}` : 'gartenMapImg'
-
-  const [views, setViews] = useState(() => loadViews(imgKey))
-  const [activeViewIdx, setActiveViewIdx] = useState(0)
-  const [pendingImg, setPendingImg] = useState(null)
-  const [pendingName, setPendingName] = useState('')
-
-  const [addMode, setAddMode] = useState(false)
-  const [moveMode, setMoveMode] = useState(false)
-  const [showList, setShowList] = useState(false)
-  const [newPoi, setNewPoi] = useState(null)
-  const [selected, setSelected] = useState(null)
-  const [crosshair, setCrosshair] = useState({ x: 50, y: 50, visible: false })
-  const mapRef = useRef()
-
-  const mapImg = views[Math.min(activeViewIdx, views.length - 1)]?.data || null
-
-  // POIs gehören zum aktuellen Parent UND zum aktiven Layer (view_index)
-  const pois = allPois?.filter(p => {
-    const matchParent = parentId === null
-      ? (p.parent_id === null || p.parent_id === undefined)
-      : p.parent_id === parentId
-    const matchView = (p.view_index ?? 0) === activeViewIdx
-    return matchParent && matchView
-  })
-
-  // Explorer-Klick: Detail-Panel öffnen sobald POIs geladen sind
-  useEffect(() => {
-    if (!openedPoiId || !pois) return
-    const poi = pois.find(p => p.id === openedPoiId)
-    if (poi) {
-      setSelected(poi)
-      onOpenedPoiHandled?.()
-    }
-  }, [openedPoiId, pois])
-
-  const [uploadError, setUploadError] = useState(null)
-
-  function persistViews(newViews) {
-    const ok = saveViews(imgKey, newViews)
-    if (ok) setViews(newViews)
-    return ok
-  }
-
   function handleImageUpload(e) {
     const file = e.target.files[0]; if (!file) return
     setUploadError(null)
@@ -261,29 +160,147 @@ function MapLevel({ parentId, parentPoi, allPois, onDrillInto, onOpenLog, highli
     }
     reader.onerror = () => setUploadError('Datei konnte nicht gelesen werden.')
     reader.readAsDataURL(file)
-    // KEIN e.target.value = '' — verursacht Probleme auf iOS/Android
   }
 
   function confirmImage() {
     const name = pendingName.trim() || `Ansicht ${views.length + 1}`
     const newViews = [...views, { name, data: pendingImg }]
-    const ok = persistViews(newViews)
-    if (!ok) {
-      setUploadError('Speichern fehlgeschlagen: Bild zu groß für den Browser-Speicher. Bitte ein kleineres oder komprimiertes Bild verwenden.')
+    if (!saveViews(imgKey, newViews)) {
+      setUploadError('Speichern fehlgeschlagen: Bild zu groß.')
       return
     }
+    setViews(newViews)
     setActiveViewIdx(newViews.length - 1)
     setPendingImg(null)
     setPendingName('')
   }
 
-  function deleteCurrentView() {
-    const v = views[activeViewIdx]
-    if (!v || !confirm(`Ansicht "${v.name}" wirklich löschen?`)) return
-    const newViews = views.filter((_, i) => i !== activeViewIdx)
-    persistViews(newViews)
-    setActiveViewIdx(Math.max(0, activeViewIdx - 1))
-  }
+  return (
+    <div className="flex min-h-full">
+      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+
+      <div className="flex-1 flex flex-col min-w-0">
+
+        {/* ── Breadcrumb-Leiste (bleibt als schmale grüne Leiste oben) ── */}
+        <div className="flex items-center bg-green-800 text-white text-sm px-3 py-2 gap-1 flex-shrink-0 sticky top-0 z-10">
+          {navStack.length > 0 ? (
+            <>
+              <button onClick={() => goTo([])} className="flex items-center gap-1 hover:text-green-300 flex-shrink-0">
+                <Home size={13} />
+              </button>
+              {breadcrumb.map((poi, i) => (
+                <span key={poi.id} className="flex items-center gap-0.5 flex-shrink-0">
+                  <ChevronRight size={13} className="text-green-500" />
+                  <button
+                    onClick={() => navigateTo(i + 1)}
+                    className={`hover:text-green-300 max-w-32 truncate text-xs ${i === breadcrumb.length - 1 ? 'text-white font-semibold' : 'text-green-300'}`}
+                  >
+                    {TYPE_ICONS[poi.type]} {poi.name}
+                  </button>
+                </span>
+              ))}
+            </>
+          ) : (
+            <span className="flex items-center gap-1 text-green-300 text-xs"><Home size={13} /> Hauptkarte</span>
+          )}
+          <button
+            onClick={() => setExplorerOpen(v => !v)}
+            className={`ml-auto flex items-center gap-1 px-2 py-0.5 rounded text-xs flex-shrink-0 ${explorerOpen ? 'bg-green-600' : 'hover:bg-green-700'}`}
+          >
+            <FolderOpen size={13} /> Explorer
+          </button>
+        </div>
+
+        {/* Fehlermeldung */}
+        {uploadError && (
+          <div className="bg-red-50 border-b border-red-200 px-4 py-2 flex items-center justify-between gap-2 flex-shrink-0">
+            <span className="text-red-700 text-xs">⚠️ {uploadError}</span>
+            <button onClick={() => setUploadError(null)} className="text-red-400 hover:text-red-600"><X size={14} /></button>
+          </div>
+        )}
+
+        {/* Bild-Vorschau */}
+        {pendingImg && (
+          <div className="bg-amber-50 border-b border-amber-300 p-3 flex flex-col gap-2 flex-shrink-0">
+            <input
+              className="border rounded px-3 py-1.5 text-sm"
+              placeholder="Name der Ansicht z.B. Erdgeschoss"
+              value={pendingName}
+              onChange={e => setPendingName(e.target.value)}
+            />
+            <img src={pendingImg} alt="Vorschau" className="w-full max-h-40 object-contain rounded border border-amber-200" />
+            <div className="flex gap-2">
+              <button onClick={confirmImage} className="flex-1 bg-green-700 text-white px-3 py-1.5 rounded text-sm font-semibold">
+                ✓ Bestätigen &amp; speichern
+              </button>
+              <button onClick={() => setPendingImg(null)} className="flex-1 border px-3 py-1.5 rounded text-sm">
+                ✗ Abbrechen
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Canvas */}
+        <div className="flex-1">
+          <MapLevel
+            key={currentParentId ?? 'root'}
+            parentId={currentParentId}
+            parentPoi={currentParentPoi}
+            allPois={allPois}
+            mapImg={mapImg}
+            activeViewIdx={activeViewIdx}
+            addMode={addMode}
+            setAddMode={setAddMode}
+            moveMode={moveMode}
+            showList={showList}
+            onDrillInto={drillInto}
+            onOpenLog={onOpenLog}
+            highlightedPoiId={highlightedPoiId}
+            openedPoiId={openedPoiId}
+            onOpenedPoiHandled={() => setOpenedPoiId(null)}
+          />
+        </div>
+      </div>
+
+      {/* Explorer-Panel */}
+      {explorerOpen && (
+        <div className="flex-shrink-0 flex" style={{ width: explorerWidth, borderLeft: '1px solid #bbf7d0' }}>
+          <div
+            className="flex-shrink-0 w-2 cursor-col-resize hover:bg-green-300 active:bg-green-400 transition-colors"
+            onMouseDown={startResize}
+            onTouchStart={startResize}
+          />
+          <div className="flex-1 min-w-0 overflow-y-auto">
+            <ExplorerPanel onClose={() => setExplorerOpen(false)} onNavigate={handleExplorerNavigate} />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// =============================================================================
+// MapLevel
+// =============================================================================
+function MapLevel({ parentId, parentPoi, allPois, mapImg, activeViewIdx, addMode, setAddMode, moveMode, showList, onDrillInto, onOpenLog, highlightedPoiId, openedPoiId, onOpenedPoiHandled }) {
+  const [newPoi, setNewPoi] = useState(null)
+  const [selected, setSelected] = useState(null)
+  const [crosshair, setCrosshair] = useState({ x: 50, y: 50, visible: false })
+  const mapRef = useRef()
+
+  const pois = allPois?.filter(p => {
+    const matchParent = parentId === null
+      ? (p.parent_id === null || p.parent_id === undefined)
+      : p.parent_id === parentId
+    const matchView = (p.view_index ?? 0) === activeViewIdx
+    return matchParent && matchView
+  })
+
+  useEffect(() => {
+    if (!openedPoiId || !pois) return
+    const poi = pois.find(p => p.id === openedPoiId)
+    if (poi) { setSelected(poi); onOpenedPoiHandled?.() }
+  }, [openedPoiId, pois])
 
   function getRelativePos(e) {
     const rect = mapRef.current.getBoundingClientRect()
@@ -297,11 +314,7 @@ function MapLevel({ parentId, parentPoi, allPois, onDrillInto, onOpenLog, highli
 
   function handleMouseMove(e) {
     const rect = mapRef.current.getBoundingClientRect()
-    setCrosshair({
-      x: ((e.clientX - rect.left) / rect.width * 100),
-      y: ((e.clientY - rect.top) / rect.height * 100),
-      visible: true,
-    })
+    setCrosshair({ x: (e.clientX - rect.left) / rect.width * 100, y: (e.clientY - rect.top) / rect.height * 100, visible: true })
   }
 
   function handleMapClick(e) {
@@ -320,14 +333,13 @@ function MapLevel({ parentId, parentPoi, allPois, onDrillInto, onOpenLog, highli
       x_position: newPoi.x,
       y_position: newPoi.y,
       parent_id: parentId,
-      view_index: activeViewIdx,   // POI gehört zum aktuell aktiven Layer
+      view_index: activeViewIdx,
     })
     setNewPoi(null)
   }
 
   return (
     <div className="p-4 flex flex-col gap-4">
-      {/* Info-Banner Innenansicht */}
       {parentPoi && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 flex items-center justify-between">
           <span className="text-amber-800 text-sm">
@@ -339,99 +351,7 @@ function MapLevel({ parentId, parentPoi, allPois, onDrillInto, onOpenLog, highli
         </div>
       )}
 
-      {/* Ansichten-Tabs (wenn mehrere vorhanden) */}
-      {views.length > 0 && (
-        <div className="flex items-center gap-1 flex-wrap">
-          <span className="text-xs text-gray-500 mr-1">Ansicht:</span>
-          {views.map((v, i) => (
-            <button
-              key={i}
-              onClick={() => setActiveViewIdx(i)}
-              className={`px-2 py-0.5 text-xs rounded border transition-colors
-                ${activeViewIdx === i
-                  ? 'bg-green-700 text-white border-green-700'
-                  : 'border-gray-300 text-gray-600 hover:border-green-400'}`}
-            >
-              {v.name}
-            </button>
-          ))}
-          {views.length > 1 && (
-            <button
-              onClick={deleteCurrentView}
-              className="text-red-400 hover:text-red-600 ml-1"
-              title={`Ansicht "${views[activeViewIdx]?.name}" löschen`}
-            >
-              <Trash2 size={13} />
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Fehlermeldung Upload */}
-      {uploadError && (
-        <div className="bg-red-50 border border-red-300 rounded-xl px-4 py-2 flex items-center justify-between gap-2">
-          <span className="text-red-700 text-sm">⚠️ {uploadError}</span>
-          <button onClick={() => setUploadError(null)} className="text-red-400 hover:text-red-600 flex-shrink-0"><X size={16} /></button>
-        </div>
-      )}
-
-      {/* Bild-Vorschau mit Bestätigungsbutton */}
-      {pendingImg && (
-        <div className="bg-amber-50 border-2 border-amber-400 rounded-xl p-3 flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <p className="text-amber-800 font-semibold text-sm flex-1">Vorschau — Name &amp; Bestätigung</p>
-          </div>
-          <input
-            className="border rounded px-3 py-1.5 text-sm"
-            placeholder="Name der Ansicht z.B. Erdgeschoss"
-            value={pendingName}
-            onChange={e => setPendingName(e.target.value)}
-          />
-          <img src={pendingImg} alt="Vorschau" className="w-full max-h-48 object-contain rounded-lg border border-amber-200" />
-          <div className="flex gap-2">
-            <button onClick={confirmImage} className="flex-1 bg-green-700 text-white px-4 py-2 rounded text-sm font-semibold hover:bg-green-800">
-              ✓ Bestätigen &amp; speichern
-            </button>
-            <button onClick={() => setPendingImg(null)} className="flex-1 border border-gray-300 px-4 py-2 rounded text-sm hover:bg-gray-50">
-              ✗ Abbrechen
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Toolbar */}
-      <div className="flex gap-2 items-center flex-wrap">
-        <label className="cursor-pointer bg-green-700 text-white px-3 py-1.5 rounded text-sm hover:bg-green-800">
-          {parentPoi ? '+ Innenfoto' : '+ Luftbild'}
-          <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-        </label>
-        <button
-          onClick={() => { setAddMode(v => !v); setMoveMode(false) }}
-          className={`flex items-center gap-1 px-3 py-1.5 rounded text-sm
-            ${addMode ? 'bg-orange-500 text-white' : 'bg-white border border-green-300 text-green-700'}`}
-        >
-          <Plus size={14} /> POI setzen
-        </button>
-        <button
-          onClick={() => { setMoveMode(v => !v); setAddMode(false) }}
-          className={`flex items-center gap-1 px-3 py-1.5 rounded text-sm
-            ${moveMode ? 'bg-blue-500 text-white' : 'bg-white border border-blue-300 text-blue-700'}`}
-        >
-          <Move size={14} /> Verschieben
-        </button>
-        <button
-          onClick={() => setShowList(v => !v)}
-          className={`flex items-center gap-1 px-3 py-1.5 rounded text-sm
-            ${showList ? 'bg-green-600 text-white' : 'bg-white border border-gray-300 text-gray-600'}`}
-        >
-          <List size={14} /> Liste
-        </button>
-        {addMode && <span className="text-orange-600 text-sm font-medium">Fadenkreuz auf Stelle → klicken</span>}
-        {moveMode && <span className="text-blue-600 text-sm font-medium">POI anklicken &amp; ziehen</span>}
-      </div>
-
       <div className="flex gap-4">
-        {/* Karte */}
         <div className="flex-1">
           <div
             ref={mapRef}
@@ -444,22 +364,20 @@ function MapLevel({ parentId, parentPoi, allPois, onDrillInto, onOpenLog, highli
           >
             {mapImg
               ? <img src={mapImg} className="w-full h-full object-cover" alt="Karte" draggable={false} />
-              : <GridCanvas label={parentPoi ? `Kein Foto für "${parentPoi.name}" — lade eine Ansicht hoch` : undefined} />
+              : <GridCanvas label={parentPoi ? `Kein Foto für "${parentPoi.name}"` : undefined} />
             }
 
-            {/* Fadenkreuz */}
             {crosshair.visible && (
               <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 20 }}>
                 <div className="absolute w-full" style={{ top: `${crosshair.y}%`, height: '1px', background: addMode ? 'rgba(249,115,22,0.7)' : 'rgba(22,163,74,0.5)' }} />
                 <div className="absolute h-full" style={{ left: `${crosshair.x}%`, width: '1px', background: addMode ? 'rgba(249,115,22,0.7)' : 'rgba(22,163,74,0.5)' }} />
-                <div className="absolute rounded-full border-2" style={{ left: `${crosshair.x}%`, top: `${crosshair.y}%`, width: 10, height: 10, transform: 'translate(-50%,-50%)', borderColor: addMode ? 'rgba(249,115,22,0.9)' : 'rgba(22,163,74,0.7)', background: 'transparent' }} />
+                <div className="absolute rounded-full border-2" style={{ left: `${crosshair.x}%`, top: `${crosshair.y}%`, width: 10, height: 10, transform: 'translate(-50%,-50%)', borderColor: addMode ? 'rgba(249,115,22,0.9)' : 'rgba(22,163,74,0.7)' }} />
                 <div className="absolute text-xs font-mono px-1 rounded" style={{ left: `${crosshair.x}%`, top: `${crosshair.y}%`, transform: 'translate(8px,-20px)', color: addMode ? 'rgb(194,65,12)' : 'rgb(22,101,52)', background: 'rgba(255,255,255,0.8)' }}>
-                  {crosshair.x.toFixed(0)}% / {crosshair.y.toFixed(0)}%
+                  {Math.round(crosshair.x)}% / {Math.round(crosshair.y)}%
                 </div>
               </div>
             )}
 
-            {/* POI Marker */}
             {pois?.map(poi => (
               <PoiMarker
                 key={poi.id}
@@ -477,18 +395,13 @@ function MapLevel({ parentId, parentPoi, allPois, onDrillInto, onOpenLog, highli
           {newPoi && <NewPoiForm onSave={savePoi} onCancel={() => setNewPoi(null)} parentPoi={parentPoi} />}
         </div>
 
-        {/* POI-Liste Sidebar */}
         {showList && (
-          <div className="w-48 bg-white border border-green-200 rounded-xl p-3 flex flex-col gap-1 overflow-y-auto" style={{ maxHeight: 400 }}>
-            <p className="font-semibold text-green-800 text-sm mb-1">
-              {parentPoi ? `In: ${parentPoi.name}` : 'Alle POIs'}
-            </p>
+          <div className="w-44 bg-white border border-green-200 rounded-xl p-3 flex flex-col gap-1 overflow-y-auto" style={{ maxHeight: 400 }}>
+            <p className="font-semibold text-green-800 text-sm mb-1">{parentPoi ? `In: ${parentPoi.name}` : 'POIs'}</p>
             {!pois?.length && <p className="text-gray-400 text-xs">Noch keine POIs</p>}
             {pois?.map(poi => (
-              <button
-                key={poi.id}
-                onClick={() => setSelected(poi)}
-                className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-sm transition-colors
+              <button key={poi.id} onClick={() => setSelected(poi)}
+                className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-sm
                   ${selected?.id === poi.id ? 'bg-green-100 text-green-900 font-semibold' : 'hover:bg-gray-50 text-gray-700'}`}
               >
                 <span style={{ fontSize: (poi.size || 28) * 0.6 + 'px' }}>{TYPE_ICONS[poi.type] || '📍'}</span>
@@ -500,7 +413,6 @@ function MapLevel({ parentId, parentPoi, allPois, onDrillInto, onOpenLog, highli
         )}
       </div>
 
-      {/* POI Detail */}
       {selected && (
         <PoiDetail
           poi={selected}
@@ -514,7 +426,9 @@ function MapLevel({ parentId, parentPoi, allPois, onDrillInto, onOpenLog, highli
   )
 }
 
-// --- POI Marker ---
+// =============================================================================
+// PoiMarker
+// =============================================================================
 function PoiMarker({ poi, moveMode, isSelected, isHighlighted, onSelect, onDragMove, mapRef }) {
   const dragRef = useRef(false)
   const size = poi.size || 28
@@ -528,86 +442,54 @@ function PoiMarker({ poi, moveMode, isSelected, isHighlighted, onSelect, onDragM
       const rect = mapRef.current.getBoundingClientRect()
       const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX
       const clientY = ev.touches ? ev.touches[0].clientY : ev.clientY
-      const x = Math.min(100, Math.max(0, ((clientX - rect.left) / rect.width * 100))).toFixed(1)
-      const y = Math.min(100, Math.max(0, ((clientY - rect.top) / rect.height * 100))).toFixed(1)
-      onDragMove(x, y)
+      onDragMove(
+        Math.min(100, Math.max(0, ((clientX - rect.left) / rect.width * 100))).toFixed(1),
+        Math.min(100, Math.max(0, ((clientY - rect.top) / rect.height * 100))).toFixed(1)
+      )
     }
     function onUp() {
       dragRef.current = false
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      window.removeEventListener('touchmove', onMove)
-      window.removeEventListener('touchend', onUp)
+      window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('touchmove', onMove); window.removeEventListener('touchend', onUp)
     }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    window.addEventListener('touchmove', onMove, { passive: true })
-    window.addEventListener('touchend', onUp)
+    window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp)
+    window.addEventListener('touchmove', onMove, { passive: true }); window.addEventListener('touchend', onUp)
   }
 
   return (
     <div
       className="absolute"
-      style={{
-        left: `${poi.x_position}%`,
-        top: `${poi.y_position}%`,
-        transform: 'translate(-50%,-50%)',
-        cursor: moveMode ? 'grab' : 'pointer',
-        userSelect: 'none',
-        zIndex: isSelected || isHighlighted ? 15 : 10,
-        width: size + 'px',
-        height: size + 'px',
-      }}
+      style={{ left: `${poi.x_position}%`, top: `${poi.y_position}%`, transform: 'translate(-50%,-50%)', cursor: moveMode ? 'grab' : 'pointer', userSelect: 'none', zIndex: isSelected || isHighlighted ? 15 : 10, width: size + 'px', height: size + 'px' }}
       onMouseDown={handleMouseDown}
       onTouchStart={handleMouseDown}
       onClick={e => { e.stopPropagation(); if (!moveMode) onSelect() }}
     >
-      {/* Icon als unterster Layer */}
-      <span
-        style={{ fontSize: size + 'px', lineHeight: 1, display: 'block' }}
+      <span style={{ fontSize: size + 'px', lineHeight: 1, display: 'block' }}
         className={`drop-shadow-md transition-transform ${isSelected ? 'scale-125' : 'hover:scale-110'}`}
-        title={poi.name}
-      >
+        title={poi.name}>
         {TYPE_ICONS[poi.type] || '📍'}
       </span>
-
-      {/* Abkürzung AUF dem Icon (Layer darüber, zentriert) */}
       {poi.abbreviation && (
-        <span
-          className="absolute inset-0 flex items-center justify-center font-bold text-white pointer-events-none select-none"
-          style={{
-            fontSize: Math.max(8, size * 0.38) + 'px',
-            textShadow: '0 0 3px #000, 0 0 3px #000, 0 0 3px #000',
-            lineHeight: 1,
-          }}
-        >
+        <span className="absolute inset-0 flex items-center justify-center font-bold text-white pointer-events-none select-none"
+          style={{ fontSize: Math.max(8, size * 0.38) + 'px', textShadow: '0 0 3px #000, 0 0 3px #000', lineHeight: 1 }}>
           {poi.abbreviation}
         </span>
       )}
-
-      {/* Drill-down Indikator: nur als kleiner Punkt unten rechts, kein extra Platz */}
       {(poi.type === 'gebäude' || poi.type === 'beet') && (
-        <span
-          className="absolute bottom-0 right-0 bg-green-600 text-white rounded-full flex items-center justify-center pointer-events-none"
-          style={{ width: Math.max(10, size * 0.32) + 'px', height: Math.max(10, size * 0.32) + 'px', fontSize: Math.max(7, size * 0.22) + 'px', lineHeight: 1 }}
-          title="Innenansicht verfügbar"
-        >
+        <span className="absolute bottom-0 right-0 bg-green-600 text-white rounded-full flex items-center justify-center pointer-events-none"
+          style={{ width: Math.max(10, size * 0.32) + 'px', height: Math.max(10, size * 0.32) + 'px', fontSize: Math.max(7, size * 0.22) + 'px' }}>
           ↗
         </span>
       )}
-
-      {/* Selektions-Ring */}
-      {isSelected && (
-        <div className="absolute inset-0 rounded-full ring-2 ring-orange-400 ring-offset-1 pointer-events-none" style={{ transform: 'scale(1.4)' }} />
-      )}
-      {isHighlighted && !isSelected && (
-        <div className="absolute inset-0 rounded-full ring-2 ring-green-400 ring-offset-1 pointer-events-none animate-pulse" style={{ transform: 'scale(1.6)' }} />
-      )}
+      {isSelected && <div className="absolute inset-0 rounded-full ring-2 ring-orange-400 ring-offset-1 pointer-events-none" style={{ transform: 'scale(1.4)' }} />}
+      {isHighlighted && !isSelected && <div className="absolute inset-0 rounded-full ring-2 ring-green-400 ring-offset-1 pointer-events-none animate-pulse" style={{ transform: 'scale(1.6)' }} />}
     </div>
   )
 }
 
-// --- Neuer POI Formular ---
+// =============================================================================
+// NewPoiForm
+// =============================================================================
 function NewPoiForm({ onSave, onCancel, parentPoi }) {
   const [name, setName] = useState('')
   const [type, setType] = useState(parentPoi?.type === 'gebäude' ? 'beet' : 'baum')
@@ -616,9 +498,7 @@ function NewPoiForm({ onSave, onCancel, parentPoi }) {
 
   return (
     <div className="mt-3 bg-white rounded-xl border border-orange-200 p-4 flex flex-col gap-3">
-      <p className="font-semibold text-orange-700">
-        📍 Neuer POI {parentPoi ? `in "${parentPoi.name}"` : '— Hauptkarte'}
-      </p>
+      <p className="font-semibold text-orange-700">📍 Neuer POI {parentPoi ? `in "${parentPoi.name}"` : '— Hauptkarte'}</p>
       <div className="grid grid-cols-2 gap-2">
         <input className="border rounded px-3 py-1.5 text-sm col-span-2" placeholder="Name" value={name} onChange={e => setName(e.target.value)} autoFocus />
         <select className="border rounded px-3 py-1.5 text-sm" value={type} onChange={e => setType(e.target.value)}>
@@ -641,7 +521,9 @@ function NewPoiForm({ onSave, onCancel, parentPoi }) {
   )
 }
 
-// --- POI Detail Panel ---
+// =============================================================================
+// PoiDetail
+// =============================================================================
 function PoiDetail({ poi, onClose, onOpenLog, onDrillInto, canDrillInto }) {
   const cultures = useLiveQuery(() => db.cultures.where('poi_id').equals(poi.id).toArray(), [poi.id])
   const photos = useLiveQuery(() => db.photos.where('poi_id').equals(poi.id).toArray(), [poi.id])
@@ -687,20 +569,12 @@ function PoiDetail({ poi, onClose, onOpenLog, onDrillInto, canDrillInto }) {
           <span style={{ fontSize: editSize + 'px' }}>{TYPE_ICONS[poi.type]}</span>
           <div>
             {editingName ? (
-              <input
-                className="border-b-2 border-green-500 bg-transparent font-bold text-green-800 text-base leading-tight outline-none w-full"
-                value={nameValue}
-                onChange={e => setNameValue(e.target.value)}
-                onBlur={saveName}
-                onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setEditingName(false) }}
-                autoFocus
-              />
+              <input className="border-b-2 border-green-500 bg-transparent font-bold text-green-800 text-base leading-tight outline-none w-full"
+                value={nameValue} onChange={e => setNameValue(e.target.value)}
+                onBlur={saveName} onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setEditingName(false) }} autoFocus />
             ) : (
-              <h2
-                className="font-bold text-green-800 text-base leading-tight cursor-pointer hover:underline hover:text-green-600"
-                onClick={() => setEditingName(true)}
-                title="Klicken zum Bearbeiten"
-              >
+              <h2 className="font-bold text-green-800 text-base leading-tight cursor-pointer hover:underline hover:text-green-600"
+                onClick={() => setEditingName(true)} title="Klicken zum Bearbeiten">
                 {poi.name} <span className="text-gray-300 text-xs font-normal">✏</span>
               </h2>
             )}
@@ -736,8 +610,7 @@ function PoiDetail({ poi, onClose, onOpenLog, onDrillInto, canDrillInto }) {
       <div className="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2">
         <label className="text-xs text-gray-500 whitespace-nowrap">Symbolgröße:</label>
         <input type="range" min={16} max={56} value={editSize}
-          onChange={e => { setEditSize(Number(e.target.value)); db.pois.update(poi.id, { size: Number(e.target.value) }) }}
-          className="flex-1" />
+          onChange={e => { setEditSize(Number(e.target.value)); db.pois.update(poi.id, { size: Number(e.target.value) }) }} className="flex-1" />
         <span style={{ fontSize: editSize + 'px' }}>{TYPE_ICONS[poi.type]}</span>
       </div>
 
@@ -749,7 +622,7 @@ function PoiDetail({ poi, onClose, onOpenLog, onDrillInto, canDrillInto }) {
           </div>
           {showAddCulture && (
             <div className="flex flex-col gap-1 mb-2 bg-gray-50 rounded-lg p-2">
-              <input className="border rounded px-2 py-1 text-xs" placeholder="Pflanze (z.B. Tomate San Marzano)" value={cultureForm.plant_name} onChange={e => setCultureForm(f => ({...f, plant_name: e.target.value}))} />
+              <input className="border rounded px-2 py-1 text-xs" placeholder="Pflanze" value={cultureForm.plant_name} onChange={e => setCultureForm(f => ({...f, plant_name: e.target.value}))} />
               <input className="border rounded px-2 py-1 text-xs" placeholder="Sorte (optional)" value={cultureForm.variety} onChange={e => setCultureForm(f => ({...f, variety: e.target.value}))} />
               <div className="flex gap-1">
                 <select className="border rounded px-2 py-1 text-xs flex-1" value={cultureForm.status} onChange={e => setCultureForm(f => ({...f, status: e.target.value}))}>

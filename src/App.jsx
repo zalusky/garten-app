@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import GardenMap from './components/GardenMap'
 import LogBook from './components/LogBook'
 import RecipeBook from './components/RecipeBook'
@@ -7,7 +7,7 @@ import CalendarView from './components/CalendarView'
 import BackupRestore from './components/BackupRestore'
 import SoilTracker from './components/SoilTracker'
 import StatsView from './components/StatsView'
-import { Map, BookOpen, FlaskConical, Sprout, CalendarDays, HardDrive, TestTube, BarChart2, X } from 'lucide-react'
+import { Map, BookOpen, FlaskConical, Sprout, CalendarDays, HardDrive, TestTube, BarChart2, X, Camera, Plus, Move, List, Trash2 } from 'lucide-react'
 
 const TABS = [
   { id: 'map',     label: 'Karte',     icon: Map },
@@ -42,7 +42,6 @@ function HelpModal({ onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 overflow-y-auto py-6 px-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col">
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 bg-green-800 text-white rounded-t-2xl sticky top-0">
           <div>
             <h2 className="text-lg font-bold">🌿 GartenApp — Benutzerhandbuch</h2>
@@ -52,120 +51,53 @@ function HelpModal({ onClose }) {
             <X size={22} />
           </button>
         </div>
-
         <div className="p-6 overflow-y-auto">
-
-          {/* Übersicht */}
           <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-6 text-sm text-green-800">
             Die GartenApp hilft Selbstversorgern beim Verwalten ihres Gartens: Grundstückskarte mit Points of Interest (POIs), Kulturführung, Logbuch, Rezepte, Saatgut, Bodenanalyse und Ernte-Statistiken — alles offline und datenschutzfreundlich im Browser gespeichert.
           </div>
-
           <HelpSection title="🗺️ Karte">
-            <HelpItem icon="📸">
-              <strong>Luftbild hochladen:</strong> Tippe auf „+ Luftbild" und wähle ein Foto deines Grundstücks. Es erscheint eine Vorschau — vergib einen Namen (z.B. „Sommer 2025") und bestätige mit dem grünen Button.
-            </HelpItem>
-            <HelpItem icon="📍">
-              <strong>POI setzen:</strong> Klicke auf „POI setzen" (orange), bewege das Fadenkreuz auf die gewünschte Stelle und klicke. Im Formular gibst du Name, Typ (Baum 🌳 / Gebäude 🏡 / Beet 🥕), optionales Kürzel und Symbolgröße ein.
-            </HelpItem>
-            <HelpItem icon="✋">
-              <strong>POI verschieben:</strong> Aktiviere „Verschieben" (blau), dann ziehe POIs per Drag &amp; Drop an die richtige Position.
-            </HelpItem>
-            <HelpItem icon="✏️">
-              <strong>POI-Name ändern:</strong> Im Eigenschaften-Panel einfach auf den Namen klicken — er wird sofort editierbar. Enter oder Klick außerhalb speichert.
-            </HelpItem>
-            <HelpItem icon="🏠">
-              <strong>Innenansicht (Gebäude/Beet):</strong> Klicke auf ein Gebäude oder Beet, dann auf „Innenansicht". Du gelangst in eine eigene Kartenebene. Dort kannst du weitere POIs und eigene Fotos hinzufügen.
-            </HelpItem>
-            <HelpItem icon="🖼️">
-              <strong>Mehrere Innenansichten:</strong> Lade beliebig viele Fotos pro Ebene hoch (z.B. Erdgeschoss, Obergeschoss, Lagerraum). Die Tabs über der Karte wechseln zwischen Ansichten; das Papierkorb-Icon löscht die aktive Ansicht.
-            </HelpItem>
-            <HelpItem icon="🔀">
-              <strong>Navigation:</strong> Die grüne Leiste oben zeigt den Pfad. „Hauptkarte" bringt dich immer zurück. Klicke auf einen Eintrag im Pfad um direkt dorthin zu springen.
-            </HelpItem>
+            <HelpItem icon="📸"><strong>Luftbild hochladen:</strong> Tippe auf das Kamera-Icon unten in der Leiste. Es erscheint eine Vorschau — vergib einen Namen und bestätige.</HelpItem>
+            <HelpItem icon="📍"><strong>POI setzen:</strong> Klicke auf „+ POI" (orange), bewege das Fadenkreuz und klicke. Im Formular gibst du Name, Typ, Kürzel und Größe ein.</HelpItem>
+            <HelpItem icon="✋"><strong>POI verschieben:</strong> Aktiviere „Verschieben" (blau), dann ziehe POIs per Drag &amp; Drop.</HelpItem>
+            <HelpItem icon="✏️"><strong>POI-Name ändern:</strong> Im Eigenschaften-Panel auf den Namen klicken — Enter oder Klick außerhalb speichert.</HelpItem>
+            <HelpItem icon="🏠"><strong>Innenansicht:</strong> Klicke auf ein Gebäude/Beet → „Innenansicht". Eigene Kartenebene mit POIs und Fotos.</HelpItem>
+            <HelpItem icon="🖼️"><strong>Mehrere Ansichten:</strong> Mehrere Fotos pro Ebene hochladen. Tabs in der unteren Leiste wechseln zwischen Ansichten.</HelpItem>
+            <HelpItem icon="🔀"><strong>Navigation:</strong> Grüne Leiste oben zeigt den Pfad. Klick auf Eintrag springt direkt dorthin.</HelpItem>
           </HelpSection>
-
           <HelpSection title="📂 Explorer">
-            <HelpItem icon="▶">
-              Den Explorer öffnest du mit dem Button „Explorer" oben rechts in der grünen Navigationsleiste.
-            </HelpItem>
-            <HelpItem icon="🌲">
-              Der Explorer zeigt alle POIs als Baum — mit Sub-POIs (einrückbar über den Pfeil) und Kulturen als Blätter.
-            </HelpItem>
-            <HelpItem icon="🖱️">
-              <strong>Anklicken eines POI:</strong> Navigiert automatisch zur richtigen Kartenebene, markiert das Objekt mit einem pulsierenden Ring und öffnet gleichzeitig das Eigenschaften-Panel.
-            </HelpItem>
-            <HelpItem icon="📋">
-              Unten im Explorer erscheinen die Eigenschaften des gewählten Objekts: Kulturen und vorhandene Innenansichts-Fotos.
-            </HelpItem>
-            <HelpItem icon="📜">
-              Karte und Explorer haben getrennte Scrollleisten — der Explorer bleibt beim Scrollen der Karte immer sichtbar.
-            </HelpItem>
+            <HelpItem icon="▶">Den Explorer öffnest du mit dem Button in der grünen Navigationsleiste oben rechts.</HelpItem>
+            <HelpItem icon="🌲">Der Explorer zeigt alle POIs als Baum mit Sub-POIs und Kulturen als Blätter.</HelpItem>
+            <HelpItem icon="🖱️"><strong>Anklicken eines POI:</strong> Navigiert zur Kartenebene, markiert das Objekt und öffnet das Eigenschaften-Panel.</HelpItem>
           </HelpSection>
-
           <HelpSection title="📖 Logbuch">
-            <HelpItem icon="➕">
-              Tippe auf „+ Eintrag" um eine Aktion zu dokumentieren: Pflanzung, Gießen, Düngung, Ernte, Behandlung, etc.
-            </HelpItem>
-            <HelpItem icon="🧺">
-              Bei Ernteeinträgen kannst du Menge (kg) und Qualität (1–5 Sterne) eintragen — diese Daten fließen in die Charts ein.
-            </HelpItem>
-            <HelpItem icon="🔗">
-              Aus dem Karten-Eigenschaften-Panel: Klick auf „Logbuch" filtert direkt auf den jeweiligen POI.
-            </HelpItem>
+            <HelpItem icon="➕">„+ Eintrag" für Aktionen: Pflanzung, Gießen, Düngung, Ernte, Behandlung.</HelpItem>
+            <HelpItem icon="🧺">Bei Ernte: Menge (kg) und Qualität (1–5 Sterne) → fließt in Charts ein.</HelpItem>
           </HelpSection>
-
           <HelpSection title="🍳 Rezepte">
-            <HelpItem icon="➕">Neues Rezept anlegen mit Titel, Zutaten und Zubereitungsschritten.</HelpItem>
-            <HelpItem icon="🔗">Rezepte können im Logbuch mit Ernteeinträgen verknüpft werden.</HelpItem>
+            <HelpItem icon="➕">Neues Rezept mit Titel, Zutaten und Zubereitungsschritten.</HelpItem>
           </HelpSection>
-
           <HelpSection title="🌱 Saatgut">
-            <HelpItem icon="📦">
-              Saatgut-Inventar mit Pflanze, Sorte, Sammeldatum, Haltbarkeitsdatum und Restmenge verwalten.
-            </HelpItem>
-            <HelpItem icon="⚠️">
-              <strong>Ablaufwarnung:</strong> Saatgut das in weniger als 60 Tagen abläuft wird orange hervorgehoben.
-            </HelpItem>
-            <HelpItem icon="🔄">
-              <strong>Fruchtfolge-Warnung:</strong> Die App erkennt automatisch wenn Starkzehrer (Tomate, Gurke, Zucchini …) zwei Jahre in Folge auf demselben Beet wachsen und warnt dich.
-            </HelpItem>
+            <HelpItem icon="📦">Inventar mit Sorte, Sammeldatum, Haltbarkeit und Restmenge.</HelpItem>
+            <HelpItem icon="⚠️"><strong>Ablaufwarnung:</strong> Saatgut &lt;60 Tage wird orange hervorgehoben.</HelpItem>
+            <HelpItem icon="🔄"><strong>Fruchtfolge-Warnung:</strong> Starkzehrer 2 Jahre in Folge auf demselben Beet → Warnung.</HelpItem>
           </HelpSection>
-
           <HelpSection title="🧪 Boden">
-            <HelpItem icon="📏">
-              Bodenproben pro POI dokumentieren: pH-Wert, Stickstoff (N), Phosphor (P) und Kalium (K).
-            </HelpItem>
-            <HelpItem icon="🎨">
-              Der pH-Wert wird farblich eingestuft: Rot (zu sauer &lt;5.5), Gelb (leicht sauer 5.5–6.5), Grün (optimal 6.5–7.5), Blau (basisch &gt;7.5).
-            </HelpItem>
+            <HelpItem icon="📏">pH, N, P, K pro POI dokumentieren.</HelpItem>
+            <HelpItem icon="🎨">pH farblich: Rot &lt;5.5, Gelb 5.5–6.5, Grün 6.5–7.5, Blau &gt;7.5.</HelpItem>
           </HelpSection>
-
           <HelpSection title="📊 Charts">
-            <HelpItem icon="📈">Gesamternte pro POI als Balkendiagramm.</HelpItem>
-            <HelpItem icon="📉">Ernte-Entwicklung über die Jahre als Liniendiagramm.</HelpItem>
-            <HelpItem icon="🧪">pH-Verlauf der Bodenproben als Liniendiagramm.</HelpItem>
-            <HelpItem icon="ℹ️">Daten kommen aus dem Logbuch — je mehr Ernteeinträge, desto aussagekräftiger die Charts.</HelpItem>
+            <HelpItem icon="📈">Gesamternte pro POI, Ernte-Entwicklung über Jahre, pH-Verlauf.</HelpItem>
           </HelpSection>
-
           <HelpSection title="📅 Kalender">
-            <HelpItem icon="📆">Zeigt alle Logbuch-Einträge und geplante Kulturen im Monatskalender.</HelpItem>
-            <HelpItem icon="◀▶">Mit den Pfeilen durch die Monate navigieren.</HelpItem>
+            <HelpItem icon="📆">Logbuch-Einträge und geplante Kulturen im Monatskalender.</HelpItem>
           </HelpSection>
-
           <HelpSection title="💾 Backup &amp; Restore">
-            <HelpItem icon="⬇️">
-              <strong>Export:</strong> Alle Daten als JSON-Datei herunterladen — als Sicherungskopie oder zum Übertragen auf ein anderes Gerät.
-            </HelpItem>
-            <HelpItem icon="⬆️">
-              <strong>Import:</strong> Eine gespeicherte JSON-Datei zurückladen. Achtung: überschreibt alle vorhandenen Daten!
-            </HelpItem>
-            <HelpItem icon="🔒">
-              Alle Daten bleiben ausschließlich lokal im Browser (IndexedDB). Es werden keine Daten in die Cloud übertragen.
-            </HelpItem>
+            <HelpItem icon="⬇️"><strong>Export:</strong> Alle Daten als JSON-Datei herunterladen.</HelpItem>
+            <HelpItem icon="⬆️"><strong>Import:</strong> JSON zurückladen — überschreibt alle vorhandenen Daten!</HelpItem>
+            <HelpItem icon="🔒">Alle Daten bleiben lokal im Browser (IndexedDB). Keine Cloud.</HelpItem>
           </HelpSection>
-
           <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-xs text-gray-500 mt-2">
-            <strong>Technische Info:</strong> Die GartenApp ist eine Progressive Web App (PWA) — sie funktioniert vollständig offline. Karten-Hintergrundbilder werden im lokalen Browser-Speicher (localStorage) abgelegt, alle anderen Daten in IndexedDB (Dexie.js). Quellcode: <a href="https://github.com/zalusky/garten-app" target="_blank" rel="noreferrer" className="text-green-700 underline">github.com/zalusky/garten-app</a>
+            <strong>Technische Info:</strong> PWA, funktioniert vollständig offline. Quellcode: <a href="https://github.com/zalusky/garten-app" target="_blank" rel="noreferrer" className="text-green-700 underline">github.com/zalusky/garten-app</a>
           </div>
         </div>
       </div>
@@ -178,7 +110,14 @@ export default function App() {
   const [logFilterPoi, setLogFilterPoi] = useState(null)
   const [showHelp, setShowHelp] = useState(false)
 
-  // Tab-Wechsel mit History-Eintrag damit Zurück-Button zwischen Tabs navigiert
+  // ── Karten-Toolbar-State (hier, damit er in der sticky Nav gerendert werden kann) ──
+  const [mapAddMode, setMapAddMode] = useState(false)
+  const [mapMoveMode, setMapMoveMode] = useState(false)
+  const [mapShowList, setMapShowList] = useState(false)
+  const [mapViews, setMapViews] = useState([])
+  const [mapActiveViewIdx, setMapActiveViewIdx] = useState(0)
+  const mapUploadRef = useRef(null) // GardenMap setzt diese Funktion beim Mount
+
   function switchTab(newTab) {
     if (newTab !== 'log') setLogFilterPoi(null)
     setTab(newTab)
@@ -190,8 +129,6 @@ export default function App() {
     switchTab('log')
   }
 
-  // Zurück-Button: Tab aus History-State wiederherstellen
-  // Sentinel-Einträge (von GardenMap) überspringen
   useEffect(() => {
     function onPop() {
       const state = history.state
@@ -218,7 +155,17 @@ export default function App() {
       </header>
 
       <main className="flex-1 overflow-auto min-h-0">
-        {tab === 'map'     && <GardenMap onOpenLog={openLogForPoi} />}
+        {tab === 'map'     && (
+          <GardenMap
+            onOpenLog={openLogForPoi}
+            addMode={mapAddMode} setAddMode={setMapAddMode}
+            moveMode={mapMoveMode} setMoveMode={setMapMoveMode}
+            showList={mapShowList}
+            views={mapViews} setViews={setMapViews}
+            activeViewIdx={mapActiveViewIdx} setActiveViewIdx={setMapActiveViewIdx}
+            uploadRef={mapUploadRef}
+          />
+        )}
         {tab === 'log'     && <LogBook filterPoi={logFilterPoi} onClearFilter={() => setLogFilterPoi(null)} />}
         {tab === 'recipes' && <RecipeBook />}
         {tab === 'seeds'   && <SeedInventory />}
@@ -229,6 +176,7 @@ export default function App() {
       </main>
 
       <nav className="bg-white border-t border-green-200 flex sticky bottom-0 overflow-x-auto flex-shrink-0">
+        {/* Standard-Tabs */}
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -241,6 +189,84 @@ export default function App() {
             {id === 'log' && logFilterPoi && <span className="w-1.5 h-1.5 bg-orange-400 rounded-full" />}
           </button>
         ))}
+
+        {/* ── Karten-Toolbar (nur sichtbar wenn Karte aktiv) ── */}
+        {tab === 'map' && (
+          <>
+            <div className="w-px bg-green-200 my-1 flex-shrink-0" />
+
+            {/* Foto hochladen */}
+            <button
+              onClick={() => mapUploadRef.current?.()}
+              className="flex-shrink-0 flex flex-col items-center py-2 px-3 text-xs gap-1 text-gray-500 hover:text-green-600"
+            >
+              <Camera size={18} />
+              Foto
+            </button>
+
+            {/* Ansicht-Tabs */}
+            {mapViews.map((v, i) => (
+              <button
+                key={i}
+                onClick={() => setMapActiveViewIdx(i)}
+                className={`flex-shrink-0 flex flex-col items-center py-2 px-2 text-xs gap-1 transition-colors
+                  ${mapActiveViewIdx === i ? 'text-green-700 font-semibold border-t-2 border-green-600' : 'text-gray-400 hover:text-green-600'}`}
+              >
+                <span className="text-base leading-none">🖼️</span>
+                {v.name}
+              </button>
+            ))}
+
+            {/* Ansicht löschen */}
+            {mapViews.length > 1 && (
+              <button
+                onClick={() => {
+                  const v = mapViews[mapActiveViewIdx]
+                  if (!v || !confirm(`Ansicht "${v.name}" löschen?`)) return
+                  const next = mapViews.filter((_, i) => i !== mapActiveViewIdx)
+                  setMapViews(next)
+                  setMapActiveViewIdx(Math.max(0, mapActiveViewIdx - 1))
+                }}
+                className="flex-shrink-0 flex flex-col items-center py-2 px-2 text-xs gap-1 text-red-400 hover:text-red-600"
+              >
+                <Trash2 size={18} />
+                Löschen
+              </button>
+            )}
+
+            <div className="w-px bg-green-200 my-1 flex-shrink-0" />
+
+            {/* POI setzen */}
+            <button
+              onClick={() => { setMapAddMode(v => !v); setMapMoveMode(false) }}
+              className={`flex-shrink-0 flex flex-col items-center py-2 px-3 text-xs gap-1 transition-colors
+                ${mapAddMode ? 'text-orange-600 font-semibold' : 'text-gray-500 hover:text-green-600'}`}
+            >
+              <Plus size={18} />
+              POI
+            </button>
+
+            {/* Verschieben */}
+            <button
+              onClick={() => { setMapMoveMode(v => !v); setMapAddMode(false) }}
+              className={`flex-shrink-0 flex flex-col items-center py-2 px-3 text-xs gap-1 transition-colors
+                ${mapMoveMode ? 'text-blue-600 font-semibold' : 'text-gray-500 hover:text-green-600'}`}
+            >
+              <Move size={18} />
+              Verschieben
+            </button>
+
+            {/* Liste */}
+            <button
+              onClick={() => setMapShowList(v => !v)}
+              className={`flex-shrink-0 flex flex-col items-center py-2 px-3 text-xs gap-1 transition-colors
+                ${mapShowList ? 'text-green-700 font-semibold' : 'text-gray-500 hover:text-green-600'}`}
+            >
+              <List size={18} />
+              Liste
+            </button>
+          </>
+        )}
       </nav>
 
       {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
