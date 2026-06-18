@@ -532,15 +532,15 @@ function PoiDetail({ poi, onClose, onOpenLog, onDrillInto, canDrillInto }) {
 
   const [showAddCulture, setShowAddCulture] = useState(false)
   const [cultureForm, setCultureForm] = useState({ plant_name: '', variety: '', status: 'gepflanzt', planting_date: new Date().toISOString().slice(0, 10) })
-  const [editSize, setEditSize] = useState(poi.size || 28)
   const [photoDate, setPhotoDate] = useState(new Date().toISOString().slice(0, 10))
-  const [editingName, setEditingName] = useState(false)
-  const [nameValue, setNameValue] = useState(poi.name)
 
-  async function saveName() {
-    const trimmed = nameValue.trim()
-    if (trimmed && trimmed !== poi.name) await db.pois.update(poi.id, { name: trimmed })
-    setEditingName(false)
+  const [editName, setEditName] = useState(poi.name)
+  const [editType, setEditType] = useState(poi.type)
+  const [editAbbr, setEditAbbr] = useState(poi.abbreviation || '')
+  const [editSize, setEditSize] = useState(poi.size || 28)
+
+  async function saveField(field, value) {
+    await db.pois.update(poi.id, { [field]: value })
   }
 
   async function addCulture() {
@@ -564,22 +564,13 @@ function PoiDetail({ poi, onClose, onOpenLog, onDrillInto, canDrillInto }) {
 
   return (
     <div className="bg-white rounded-xl border-2 border-green-300 p-4 flex flex-col gap-4 shadow-lg">
+
+      {/* ── Kopfzeile: Aktions-Buttons ── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span style={{ fontSize: editSize + 'px' }}>{TYPE_ICONS[poi.type]}</span>
-          <div>
-            {editingName ? (
-              <input className="border-b-2 border-green-500 bg-transparent font-bold text-green-800 text-base leading-tight outline-none w-full"
-                value={nameValue} onChange={e => setNameValue(e.target.value)}
-                onBlur={saveName} onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setEditingName(false) }} autoFocus />
-            ) : (
-              <h2 className="font-bold text-green-800 text-base leading-tight cursor-pointer hover:underline hover:text-green-600"
-                onClick={() => setEditingName(true)} title="Klicken zum Bearbeiten">
-                {poi.name} <span className="text-gray-300 text-xs font-normal">✏</span>
-              </h2>
-            )}
-            {poi.abbreviation && <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-mono">{poi.abbreviation}</span>}
-          </div>
+          <span style={{ fontSize: editSize + 'px' }}>{TYPE_ICONS[editType]}</span>
+          <span className="font-bold text-green-800 text-base">{editName || poi.name}</span>
+          {editAbbr && <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-mono">{editAbbr}</span>}
         </div>
         <div className="flex items-center gap-2">
           {canDrillInto && (
@@ -591,6 +582,53 @@ function PoiDetail({ poi, onClose, onOpenLog, onDrillInto, canDrillInto }) {
             <BookOpen size={14} /> Logbuch
           </button>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+      </div>
+
+      {/* ── Eigenschaften ── */}
+      <div className="bg-gray-50 rounded-xl p-3 grid grid-cols-2 gap-3">
+        <div className="col-span-2">
+          <label className="text-xs text-gray-500 mb-1 block">Name</label>
+          <input
+            className="border rounded px-3 py-1.5 text-sm w-full"
+            value={editName}
+            onChange={e => setEditName(e.target.value)}
+            onBlur={() => saveField('name', editName.trim() || poi.name)}
+            onKeyDown={e => e.key === 'Enter' && saveField('name', editName.trim() || poi.name)}
+          />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">Typ</label>
+          <select
+            className="border rounded px-3 py-1.5 text-sm w-full"
+            value={editType}
+            onChange={e => { setEditType(e.target.value); saveField('type', e.target.value) }}
+          >
+            <option value="baum">🌳 Baum</option>
+            <option value="gebäude">🏡 Gebäude</option>
+            <option value="beet">🥕 Beet</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">Abkürzung</label>
+          <input
+            className="border rounded px-3 py-1.5 text-sm w-full font-mono"
+            maxLength={5}
+            placeholder="z.B. GH1"
+            value={editAbbr}
+            onChange={e => setEditAbbr(e.target.value.toUpperCase())}
+            onBlur={() => saveField('abbreviation', editAbbr)}
+            onKeyDown={e => e.key === 'Enter' && saveField('abbreviation', editAbbr)}
+          />
+        </div>
+        <div className="col-span-2 flex items-center gap-3">
+          <label className="text-xs text-gray-500 whitespace-nowrap">Symbolgröße:</label>
+          <input type="range" min={16} max={56} value={editSize} className="flex-1"
+            onChange={e => setEditSize(Number(e.target.value))}
+            onMouseUp={e => saveField('size', Number(e.target.value))}
+            onTouchEnd={e => saveField('size', editSize)}
+          />
+          <span style={{ fontSize: editSize + 'px', lineHeight: 1 }}>{TYPE_ICONS[editType]}</span>
         </div>
       </div>
 
@@ -606,13 +644,6 @@ function PoiDetail({ poi, onClose, onOpenLog, onDrillInto, canDrillInto }) {
           </div>
         </div>
       )}
-
-      <div className="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2">
-        <label className="text-xs text-gray-500 whitespace-nowrap">Symbolgröße:</label>
-        <input type="range" min={16} max={56} value={editSize}
-          onChange={e => { setEditSize(Number(e.target.value)); db.pois.update(poi.id, { size: Number(e.target.value) }) }} className="flex-1" />
-        <span style={{ fontSize: editSize + 'px' }}>{TYPE_ICONS[poi.type]}</span>
-      </div>
 
       <div className="grid grid-cols-2 gap-4">
         <section>
