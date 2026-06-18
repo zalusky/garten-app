@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db'
 import { Plus, X, Move, BookOpen, List, ChevronRight, Home, FolderOpen, Trash2 } from 'lucide-react'
@@ -50,6 +50,7 @@ export default function GardenMap({ onOpenLog }) {
   const [navStack, setNavStack] = useState([])
   const [explorerOpen, setExplorerOpen] = useState(false)
   const [highlightedPoiId, setHighlightedPoiId] = useState(null)
+  const [openedPoiId, setOpenedPoiId] = useState(null)
   const highlightTimer = useRef(null)
 
   const allPois = useLiveQuery(() => db.pois.toArray(), [])
@@ -63,16 +64,17 @@ export default function GardenMap({ onOpenLog }) {
 
   function handleExplorerNavigate(stack, poiId) {
     setNavStack(stack)
+    setOpenedPoiId(poiId)
     if (highlightTimer.current) clearTimeout(highlightTimer.current)
     setHighlightedPoiId(poiId)
     highlightTimer.current = setTimeout(() => setHighlightedPoiId(null), 3000)
   }
 
   return (
-    <div className="flex" style={{ minHeight: 'calc(100vh - 112px)' }}>
+    <div className="flex" style={{ height: 'calc(100vh - 112px)' }}>
       {/* Linke Hauptfläche */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Navigationsleiste (immer sichtbar) */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
+        {/* Navigationsleiste (immer sichtbar, kein Scrollen) */}
         <div className="flex items-center gap-1 px-4 py-2 bg-green-800 text-white text-sm overflow-x-auto flex-shrink-0">
           {navStack.length > 0 ? (
             <>
@@ -104,30 +106,37 @@ export default function GardenMap({ onOpenLog }) {
           </button>
         </div>
 
-        <MapLevel
-          key={currentParentId ?? 'root'}
-          parentId={currentParentId}
-          parentPoi={currentParentPoi}
-          allPois={allPois}
-          onDrillInto={drillInto}
-          onOpenLog={onOpenLog}
-          highlightedPoiId={highlightedPoiId}
-        />
+        {/* Karten-Inhalt — eigene Scrollleiste */}
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <MapLevel
+            key={currentParentId ?? 'root'}
+            parentId={currentParentId}
+            parentPoi={currentParentPoi}
+            allPois={allPois}
+            onDrillInto={drillInto}
+            onOpenLog={onOpenLog}
+            highlightedPoiId={highlightedPoiId}
+            openedPoiId={openedPoiId}
+            onOpenedPoiHandled={() => setOpenedPoiId(null)}
+          />
+        </div>
       </div>
 
-      {/* Explorer-Panel rechts */}
+      {/* Explorer-Panel rechts — eigene Scrollleiste, bleibt fixiert */}
       {explorerOpen && (
-        <ExplorerPanel
-          onClose={() => setExplorerOpen(false)}
-          onNavigate={handleExplorerNavigate}
-        />
+        <div className="flex-shrink-0 overflow-y-auto" style={{ width: 272, borderLeft: '1px solid #bbf7d0' }}>
+          <ExplorerPanel
+            onClose={() => setExplorerOpen(false)}
+            onNavigate={handleExplorerNavigate}
+          />
+        </div>
       )}
     </div>
   )
 }
 
 // --- MapLevel: eine Kartenebene ---
-function MapLevel({ parentId, parentPoi, allPois, onDrillInto, onOpenLog, highlightedPoiId }) {
+function MapLevel({ parentId, parentPoi, allPois, onDrillInto, onOpenLog, highlightedPoiId, openedPoiId, onOpenedPoiHandled }) {
   const imgKey = parentId ? `gartenMapImg_poi_${parentId}` : 'gartenMapImg'
 
   const [views, setViews] = useState(() => loadViews(imgKey))
@@ -148,6 +157,16 @@ function MapLevel({ parentId, parentPoi, allPois, onDrillInto, onOpenLog, highli
   const pois = allPois?.filter(p =>
     parentId === null ? (p.parent_id === null || p.parent_id === undefined) : p.parent_id === parentId
   )
+
+  // Explorer-Klick: Detail-Panel öffnen sobald POIs geladen sind
+  useEffect(() => {
+    if (!openedPoiId || !pois) return
+    const poi = pois.find(p => p.id === openedPoiId)
+    if (poi) {
+      setSelected(poi)
+      onOpenedPoiHandled?.()
+    }
+  }, [openedPoiId, pois])
 
   function persistViews(newViews) {
     setViews(newViews)

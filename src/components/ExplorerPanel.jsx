@@ -111,10 +111,7 @@ export default function ExplorerPanel({ onClose, onNavigate }) {
   const innerViews = selectedPoi ? loadInnerViews(selectedPoi.id) : []
 
   return (
-    <div
-      className="flex flex-col bg-white border-l border-green-200 flex-shrink-0"
-      style={{ width: 272, minHeight: 0, height: '100%' }}
-    >
+    <div className="flex flex-col bg-white min-h-full">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 bg-green-800 text-white flex-shrink-0">
         <span className="font-semibold text-sm">📂 Explorer</span>
@@ -122,7 +119,7 @@ export default function ExplorerPanel({ onClose, onNavigate }) {
       </div>
 
       {/* Tree */}
-      <div className="flex-1 overflow-y-auto py-1 min-h-0">
+      <div className="py-1">
         {rootPois.length === 0 && (
           <p className="text-gray-400 text-xs px-4 py-6 text-center">
             Noch keine POIs angelegt.<br />Wechsle zur Karte und setze POIs.
@@ -145,10 +142,7 @@ export default function ExplorerPanel({ onClose, onNavigate }) {
 
       {/* Eigenschaften-Panel */}
       {selectedPoi ? (
-        <div
-          className="border-t border-green-200 bg-green-50 overflow-y-auto flex-shrink-0 p-3"
-          style={{ maxHeight: '45%' }}
-        >
+        <div className="border-t border-green-200 bg-green-50 p-3 sticky bottom-0">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-2xl leading-none">{TYPE_ICONS[selectedPoi.type] || '📍'}</span>
             <div>
