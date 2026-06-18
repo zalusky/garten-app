@@ -67,6 +67,7 @@ export default function GardenMap({
   const [explorerWidth, setExplorerWidth] = useState(272)
   const highlightTimer = useRef(null)
   const resizeDragRef = useRef(false)
+  const pendingViewIdx = useRef(null)
 
   const [pendingImg, setPendingImg] = useState(null)
   const [pendingName, setPendingName] = useState('')
@@ -83,8 +84,11 @@ export default function GardenMap({
 
   // Beim Navigationswechsel: Views neu laden, Modi zurücksetzen
   useEffect(() => {
-    setViews(loadViews(imgKey))
-    setActiveViewIdx(0)
+    const loaded = loadViews(imgKey)
+    setViews(loaded)
+    const idx = pendingViewIdx.current ?? 0
+    setActiveViewIdx(Math.min(idx, Math.max(0, loaded.length - 1)))
+    pendingViewIdx.current = null
     setAddMode(false)
     setMoveMode(false)
     setPendingImg(null)
@@ -122,6 +126,8 @@ export default function GardenMap({
   function navigateTo(index) { goTo(navStack.slice(0, index)) }
 
   function handleExplorerNavigate(stack, poiId) {
+    const targetPoi = allPois?.find(p => p.id === poiId)
+    if (targetPoi?.view_index != null) pendingViewIdx.current = targetPoi.view_index
     goTo(stack)
     setOpenedPoiId(poiId)
     if (highlightTimer.current) clearTimeout(highlightTimer.current)
