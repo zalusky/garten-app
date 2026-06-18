@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import GardenMap from './components/GardenMap'
 import LogBook from './components/LogBook'
 import RecipeBook from './components/RecipeBook'
@@ -178,10 +178,27 @@ export default function App() {
   const [logFilterPoi, setLogFilterPoi] = useState(null)
   const [showHelp, setShowHelp] = useState(false)
 
+  // Tab-Wechsel mit History-Eintrag damit Zurück-Button zwischen Tabs navigiert
+  function switchTab(newTab) {
+    if (newTab !== 'log') setLogFilterPoi(null)
+    setTab(newTab)
+    history.pushState({ gartenTab: newTab }, '')
+  }
+
   function openLogForPoi(poi) {
     setLogFilterPoi(poi)
-    setTab('log')
+    switchTab('log')
   }
+
+  // Zurück-Button: Tab aus History-State wiederherstellen
+  useEffect(() => {
+    function onPop() {
+      const state = history.state
+      if (state?.gartenTab) setTab(state.gartenTab)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
 
   return (
     <div className="h-screen flex flex-col bg-green-50">
@@ -213,7 +230,7 @@ export default function App() {
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
-            onClick={() => { setTab(id); if (id !== 'log') setLogFilterPoi(null) }}
+            onClick={() => switchTab(id)}
             className={`flex-shrink-0 flex flex-col items-center py-2 px-3 text-xs gap-1 transition-colors
               ${tab === id ? 'text-green-700 font-semibold' : 'text-gray-500 hover:text-green-600'}`}
           >

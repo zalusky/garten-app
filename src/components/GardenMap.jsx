@@ -47,7 +47,11 @@ function GridCanvas({ label }) {
 
 // --- Haupt-Export ---
 export default function GardenMap({ onOpenLog }) {
-  const [navStack, setNavStack] = useState([])
+  const [navStack, setNavStack] = useState(() => {
+    // Beim Start: Basis-Eintrag in History setzen damit erster Back nicht die App schließt
+    history.replaceState({ gartenStack: [] }, '')
+    return []
+  })
   const [explorerOpen, setExplorerOpen] = useState(false)
   const [highlightedPoiId, setHighlightedPoiId] = useState(null)
   const [openedPoiId, setOpenedPoiId] = useState(null)
@@ -83,8 +87,24 @@ export default function GardenMap({ onOpenLog }) {
   const currentParentPoi = allPois?.find(p => p.id === currentParentId) || null
   const breadcrumb = navStack.map(id => allPois?.find(p => p.id === id)).filter(Boolean)
 
-  function drillInto(poi) { setNavStack(s => [...s, poi.id]) }
-  function navigateTo(index) { setNavStack(s => s.slice(0, index)) }
+  // Einheitliche Navigation: setzt State UND schreibt History-Eintrag
+  function goTo(newStack) {
+    setNavStack(newStack)
+    history.pushState({ gartenStack: newStack }, '')
+  }
+
+  function drillInto(poi) { goTo([...navStack, poi.id]) }
+  function navigateTo(index) { goTo(navStack.slice(0, index)) }
+
+  // Zurück-Button: popstate → navStack aus History-State wiederherstellen
+  useEffect(() => {
+    function onPop() {
+      const stack = history.state?.gartenStack ?? []
+      setNavStack(stack)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
 
   function handleExplorerNavigate(stack, poiId) {
     setNavStack(stack)
@@ -102,7 +122,7 @@ export default function GardenMap({ onOpenLog }) {
         <div className="flex items-center gap-1 px-4 py-2 bg-green-800 text-white text-sm overflow-x-auto flex-shrink-0">
           {navStack.length > 0 ? (
             <>
-              <button onClick={() => setNavStack([])} className="flex items-center gap-1 hover:text-green-300 flex-shrink-0">
+              <button onClick={() => goTo([])} className="flex items-center gap-1 hover:text-green-300 flex-shrink-0">
                 <Home size={14} /> Hauptkarte
               </button>
               {breadcrumb.map((poi, i) => (
