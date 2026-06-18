@@ -8,15 +8,25 @@ const TYPE_ICONS = { baum: '🌳', gebäude: '🏡', beet: '🥕' }
 
 // --- localStorage multi-view helpers ---
 function loadViews(imgKey) {
-  const raw = localStorage.getItem(imgKey)
-  if (!raw) return []
-  if (raw.startsWith('[')) { try { return JSON.parse(raw) } catch { return [] } }
-  return [{ name: 'Ansicht 1', data: raw }]   // legacy single-image migration
+  try {
+    const raw = localStorage.getItem(imgKey)
+    if (!raw) return []
+    if (raw.startsWith('[')) return JSON.parse(raw)
+    return [{ name: 'Ansicht 1', data: raw }]   // legacy single-image migration
+  } catch {
+    return []
+  }
 }
 
+// Gibt true zurück wenn erfolgreich, false wenn Speicherlimit überschritten
 function saveViews(imgKey, views) {
-  if (views.length === 0) localStorage.removeItem(imgKey)
-  else localStorage.setItem(imgKey, JSON.stringify(views))
+  try {
+    if (views.length === 0) { localStorage.removeItem(imgKey); return true }
+    localStorage.setItem(imgKey, JSON.stringify(views))
+    return true
+  } catch {
+    return false   // QuotaExceededError (Mobile ~5 MB Limit)
+  }
 }
 
 // --- GridCanvas Fallback ---
@@ -214,9 +224,14 @@ function MapLevel({ parentId, parentPoi, allPois, onDrillInto, onOpenLog, highli
 
   const mapImg = views[Math.min(activeViewIdx, views.length - 1)]?.data || null
 
-  const pois = allPois?.filter(p =>
-    parentId === null ? (p.parent_id === null || p.parent_id === undefined) : p.parent_id === parentId
-  )
+  // POIs gehören zum aktuellen Parent UND zum aktiven Layer (view_index)
+  const pois = allPois?.filter(p => {
+    const matchParent = parentId === null
+      ? (p.parent_id === null || p.parent_id === undefined)
+      : p.parent_id === parentId
+    const matchView = (p.view_index ?? 0) === activeViewIdx
+    return matchParent && matchView
+  })
 
   // Explorer-Klick: Detail-Panel öffnen sobald POIs geladen sind
   useEffect(() => {
@@ -228,26 +243,35 @@ function MapLevel({ parentId, parentPoi, allPois, onDrillInto, onOpenLog, highli
     }
   }, [openedPoiId, pois])
 
+  const [uploadError, setUploadError] = useState(null)
+
   function persistViews(newViews) {
-    setViews(newViews)
-    saveViews(imgKey, newViews)
+    const ok = saveViews(imgKey, newViews)
+    if (ok) setViews(newViews)
+    return ok
   }
 
   function handleImageUpload(e) {
     const file = e.target.files[0]; if (!file) return
+    setUploadError(null)
     const reader = new FileReader()
     reader.onload = ev => {
       setPendingImg(ev.target.result)
       setPendingName(`Ansicht ${views.length + 1}`)
     }
+    reader.onerror = () => setUploadError('Datei konnte nicht gelesen werden.')
     reader.readAsDataURL(file)
-    e.target.value = ''
+    // KEIN e.target.value = '' — verursacht Probleme auf iOS/Android
   }
 
   function confirmImage() {
     const name = pendingName.trim() || `Ansicht ${views.length + 1}`
     const newViews = [...views, { name, data: pendingImg }]
-    persistViews(newViews)
+    const ok = persistViews(newViews)
+    if (!ok) {
+      setUploadError('Speichern fehlgeschlagen: Bild zu groß für den Browser-Speicher. Bitte ein kleineres oder komprimiertes Bild verwenden.')
+      return
+    }
     setActiveViewIdx(newViews.length - 1)
     setPendingImg(null)
     setPendingName('')
@@ -296,6 +320,7 @@ function MapLevel({ parentId, parentPoi, allPois, onDrillInto, onOpenLog, highli
       x_position: newPoi.x,
       y_position: newPoi.y,
       parent_id: parentId,
+      view_index: activeViewIdx,   // POI gehört zum aktuell aktiven Layer
     })
     setNewPoi(null)
   }
@@ -339,6 +364,14 @@ function MapLevel({ parentId, parentPoi, allPois, onDrillInto, onOpenLog, highli
               <Trash2 size={13} />
             </button>
           )}
+        </div>
+      )}
+
+      {/* Fehlermeldung Upload */}
+      {uploadError && (
+        <div className="bg-red-50 border border-red-300 rounded-xl px-4 py-2 flex items-center justify-between gap-2">
+          <span className="text-red-700 text-sm">⚠️ {uploadError}</span>
+          <button onClick={() => setUploadError(null)} className="text-red-400 hover:text-red-600 flex-shrink-0"><X size={16} /></button>
         </div>
       )}
 
