@@ -51,7 +51,31 @@ export default function GardenMap({ onOpenLog }) {
   const [explorerOpen, setExplorerOpen] = useState(false)
   const [highlightedPoiId, setHighlightedPoiId] = useState(null)
   const [openedPoiId, setOpenedPoiId] = useState(null)
+  const [explorerWidth, setExplorerWidth] = useState(272)
   const highlightTimer = useRef(null)
+  const resizeDragRef = useRef(false)
+
+  function startResize(e) {
+    e.preventDefault()
+    resizeDragRef.current = true
+    function onMove(ev) {
+      if (!resizeDragRef.current) return
+      const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX
+      const newWidth = Math.min(480, Math.max(160, window.innerWidth - clientX))
+      setExplorerWidth(newWidth)
+    }
+    function onUp() {
+      resizeDragRef.current = false
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('touchmove', onMove)
+      window.removeEventListener('touchend', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    window.addEventListener('touchmove', onMove, { passive: false })
+    window.addEventListener('touchend', onUp)
+  }
 
   const allPois = useLiveQuery(() => db.pois.toArray(), [])
 
@@ -124,11 +148,21 @@ export default function GardenMap({ onOpenLog }) {
 
       {/* Explorer-Panel rechts — eigene Scrollleiste, bleibt fixiert */}
       {explorerOpen && (
-        <div className="flex-shrink-0 overflow-y-auto" style={{ width: 272, borderLeft: '1px solid #bbf7d0' }}>
-          <ExplorerPanel
-            onClose={() => setExplorerOpen(false)}
-            onNavigate={handleExplorerNavigate}
+        <div className="flex-shrink-0 flex overflow-y-auto" style={{ width: explorerWidth, borderLeft: '1px solid #bbf7d0' }}>
+          {/* Drag-Handle zum Breiteverändern */}
+          <div
+            className="flex-shrink-0 w-2 cursor-col-resize hover:bg-green-300 active:bg-green-400 transition-colors"
+            style={{ background: 'transparent' }}
+            onMouseDown={startResize}
+            onTouchStart={startResize}
+            title="Breite ziehen"
           />
+          <div className="flex-1 min-w-0">
+            <ExplorerPanel
+              onClose={() => setExplorerOpen(false)}
+              onNavigate={handleExplorerNavigate}
+            />
+          </div>
         </div>
       )}
     </div>
