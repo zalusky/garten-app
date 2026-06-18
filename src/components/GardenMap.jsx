@@ -508,7 +508,7 @@ function PoiMarker({ poi, moveMode, isSelected, isHighlighted, onSelect, onDragM
 
   return (
     <div
-      className="absolute flex flex-col items-center"
+      className="absolute"
       style={{
         left: `${poi.x_position}%`,
         top: `${poi.y_position}%`,
@@ -516,31 +516,53 @@ function PoiMarker({ poi, moveMode, isSelected, isHighlighted, onSelect, onDragM
         cursor: moveMode ? 'grab' : 'pointer',
         userSelect: 'none',
         zIndex: isSelected || isHighlighted ? 15 : 10,
+        width: size + 'px',
+        height: size + 'px',
       }}
       onMouseDown={handleMouseDown}
       onTouchStart={handleMouseDown}
       onClick={e => { e.stopPropagation(); if (!moveMode) onSelect() }}
     >
-      {poi.abbreviation && (
-        <span className="bg-white/90 text-green-900 font-bold rounded px-1 leading-tight mb-0.5 shadow-sm" style={{ fontSize: Math.max(9, size * 0.4) + 'px' }}>
-          {poi.abbreviation}
-        </span>
-      )}
+      {/* Icon als unterster Layer */}
       <span
-        style={{ fontSize: size + 'px', lineHeight: 1 }}
+        style={{ fontSize: size + 'px', lineHeight: 1, display: 'block' }}
         className={`drop-shadow-md transition-transform ${isSelected ? 'scale-125' : 'hover:scale-110'}`}
         title={poi.name}
       >
         {TYPE_ICONS[poi.type] || '📍'}
       </span>
-      {(poi.type === 'gebäude' || poi.type === 'beet') && (
-        <span className="text-xs bg-white/80 text-green-700 rounded px-1 mt-0.5 leading-tight">↗ öffnen</span>
+
+      {/* Abkürzung AUF dem Icon (Layer darüber, zentriert) */}
+      {poi.abbreviation && (
+        <span
+          className="absolute inset-0 flex items-center justify-center font-bold text-white pointer-events-none select-none"
+          style={{
+            fontSize: Math.max(8, size * 0.38) + 'px',
+            textShadow: '0 0 3px #000, 0 0 3px #000, 0 0 3px #000',
+            lineHeight: 1,
+          }}
+        >
+          {poi.abbreviation}
+        </span>
       )}
+
+      {/* Drill-down Indikator: nur als kleiner Punkt unten rechts, kein extra Platz */}
+      {(poi.type === 'gebäude' || poi.type === 'beet') && (
+        <span
+          className="absolute bottom-0 right-0 bg-green-600 text-white rounded-full flex items-center justify-center pointer-events-none"
+          style={{ width: Math.max(10, size * 0.32) + 'px', height: Math.max(10, size * 0.32) + 'px', fontSize: Math.max(7, size * 0.22) + 'px', lineHeight: 1 }}
+          title="Innenansicht verfügbar"
+        >
+          ↗
+        </span>
+      )}
+
+      {/* Selektions-Ring */}
       {isSelected && (
-        <div className="absolute inset-0 rounded-full ring-2 ring-orange-400 ring-offset-1 pointer-events-none" style={{ transform: 'scale(1.5)' }} />
+        <div className="absolute inset-0 rounded-full ring-2 ring-orange-400 ring-offset-1 pointer-events-none" style={{ transform: 'scale(1.4)' }} />
       )}
       {isHighlighted && !isSelected && (
-        <div className="absolute inset-0 rounded-full ring-2 ring-green-400 ring-offset-1 pointer-events-none animate-pulse" style={{ transform: 'scale(1.7)' }} />
+        <div className="absolute inset-0 rounded-full ring-2 ring-green-400 ring-offset-1 pointer-events-none animate-pulse" style={{ transform: 'scale(1.6)' }} />
       )}
     </div>
   )
