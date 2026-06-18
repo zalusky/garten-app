@@ -77,6 +77,7 @@ export default function GardenMap({ onOpenLog }) {
       )}
 
       <MapLevel
+        key={currentParentId ?? 'root'}
         parentId={currentParentId}
         parentPoi={currentParentPoi}
         allPois={allPois}
@@ -91,6 +92,7 @@ export default function GardenMap({ onOpenLog }) {
 function MapLevel({ parentId, parentPoi, allPois, onDrillInto, onOpenLog }) {
   const imgKey = parentId ? `gartenMapImg_poi_${parentId}` : 'gartenMapImg'
   const [mapImg, setMapImg] = useState(() => localStorage.getItem(imgKey) || null)
+  const [pendingImg, setPendingImg] = useState(null)   // Vorschau vor Bestätigung
   const [addMode, setAddMode] = useState(false)
   const [moveMode, setMoveMode] = useState(false)
   const [showList, setShowList] = useState(false)
@@ -148,11 +150,18 @@ function MapLevel({ parentId, parentPoi, allPois, onDrillInto, onOpenLog }) {
     const file = e.target.files[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = ev => {
-      localStorage.setItem(imgKey, ev.target.result)
-      setMapImg(ev.target.result)
-    }
+    reader.onload = ev => setPendingImg(ev.target.result)
     reader.readAsDataURL(file)
+  }
+
+  function confirmImage() {
+    localStorage.setItem(imgKey, pendingImg)
+    setMapImg(pendingImg)
+    setPendingImg(null)
+  }
+
+  function cancelImage() {
+    setPendingImg(null)
   }
 
   function handlePoiClick(poi) {
@@ -176,6 +185,22 @@ function MapLevel({ parentId, parentPoi, allPois, onDrillInto, onOpenLog }) {
             {parentPoi.abbreviation && <span className="ml-1 text-amber-600">({parentPoi.abbreviation})</span>}
           </span>
           <span className="text-xs text-amber-600">POIs hier sind Sub-Elemente dieses Objekts</span>
+        </div>
+      )}
+
+      {/* Bild-Vorschau mit Bestätigungsbutton */}
+      {pendingImg && (
+        <div className="bg-amber-50 border-2 border-amber-400 rounded-xl p-3 flex flex-col gap-2">
+          <p className="text-amber-800 font-semibold text-sm">Vorschau — Bild übernehmen?</p>
+          <img src={pendingImg} alt="Vorschau" className="w-full max-h-48 object-contain rounded-lg border border-amber-200" />
+          <div className="flex gap-2">
+            <button onClick={confirmImage} className="flex-1 bg-green-700 text-white px-4 py-2 rounded text-sm font-semibold hover:bg-green-800">
+              ✓ Bestätigen &amp; speichern
+            </button>
+            <button onClick={cancelImage} className="flex-1 border border-gray-300 px-4 py-2 rounded text-sm hover:bg-gray-50">
+              ✗ Abbrechen
+            </button>
+          </div>
         </div>
       )}
 
