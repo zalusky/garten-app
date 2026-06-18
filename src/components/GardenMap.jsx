@@ -47,11 +47,7 @@ function GridCanvas({ label }) {
 
 // --- Haupt-Export ---
 export default function GardenMap({ onOpenLog }) {
-  const [navStack, setNavStack] = useState(() => {
-    // Beim Start: Basis-Eintrag in History setzen damit erster Back nicht die App schließt
-    history.replaceState({ gartenStack: [] }, '')
-    return []
-  })
+  const [navStack, setNavStack] = useState([])
   const [explorerOpen, setExplorerOpen] = useState(false)
   const [highlightedPoiId, setHighlightedPoiId] = useState(null)
   const [openedPoiId, setOpenedPoiId] = useState(null)
@@ -96,11 +92,21 @@ export default function GardenMap({ onOpenLog }) {
   function drillInto(poi) { goTo([...navStack, poi.id]) }
   function navigateTo(index) { goTo(navStack.slice(0, index)) }
 
-  // Zurück-Button: popstate → navStack aus History-State wiederherstellen
+  // History-Fundament beim Mount aufbauen:
+  // Entry 0 (Sentinel) → Entry 1 (Arbeitseintrag)
+  // Wenn Zurück den Sentinel trifft, sofort neuen Entry pushen → App verlässt nie
   useEffect(() => {
+    history.replaceState({ gartenSentinel: true }, '')
+    history.pushState({ gartenStack: [] }, '')
+
     function onPop() {
-      const stack = history.state?.gartenStack ?? []
-      setNavStack(stack)
+      if (history.state?.gartenSentinel) {
+        // Boden erreicht: sofort neuen Entry schieben → kein App-Exit
+        history.pushState({ gartenStack: [] }, '')
+        setNavStack([])
+        return
+      }
+      setNavStack(history.state?.gartenStack ?? [])
     }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)

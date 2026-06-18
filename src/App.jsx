@@ -191,10 +191,12 @@ export default function App() {
   }
 
   // Zurück-Button: Tab aus History-State wiederherstellen
+  // Sentinel-Einträge (von GardenMap) überspringen
   useEffect(() => {
     function onPop() {
       const state = history.state
-      if (state?.gartenTab) setTab(state.gartenTab)
+      if (!state || state.gartenSentinel) return
+      if (state.gartenTab) setTab(state.gartenTab)
     }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
