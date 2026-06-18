@@ -538,9 +538,26 @@ function PoiDetail({ poi, onClose, onOpenLog, onDrillInto, canDrillInto }) {
   const [editType, setEditType] = useState(poi.type)
   const [editAbbr, setEditAbbr] = useState(poi.abbreviation || '')
   const [editSize, setEditSize] = useState(poi.size || 28)
+  const [saved, setSaved] = useState(false)
 
-  async function saveField(field, value) {
-    await db.pois.update(poi.id, { [field]: value })
+  // Wenn ein anderes Objekt angewählt wird (Explorer oder Canvas), Felder synchronisieren
+  useEffect(() => {
+    setEditName(poi.name)
+    setEditType(poi.type)
+    setEditAbbr(poi.abbreviation || '')
+    setEditSize(poi.size || 28)
+    setSaved(false)
+  }, [poi.id])
+
+  async function confirmChanges() {
+    await db.pois.update(poi.id, {
+      name: editName.trim() || poi.name,
+      type: editType,
+      abbreviation: editAbbr,
+      size: editSize,
+    })
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
   }
 
   async function addCulture() {
@@ -586,50 +603,53 @@ function PoiDetail({ poi, onClose, onOpenLog, onDrillInto, canDrillInto }) {
       </div>
 
       {/* ── Eigenschaften ── */}
-      <div className="bg-gray-50 rounded-xl p-3 grid grid-cols-2 gap-3">
-        <div className="col-span-2">
-          <label className="text-xs text-gray-500 mb-1 block">Name</label>
-          <input
-            className="border rounded px-3 py-1.5 text-sm w-full"
-            value={editName}
-            onChange={e => setEditName(e.target.value)}
-            onBlur={() => saveField('name', editName.trim() || poi.name)}
-            onKeyDown={e => e.key === 'Enter' && saveField('name', editName.trim() || poi.name)}
-          />
+      <div className="bg-gray-50 rounded-xl p-3 flex flex-col gap-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <label className="text-xs text-gray-500 mb-1 block">Name</label>
+            <input
+              className="border rounded px-3 py-1.5 text-sm w-full"
+              value={editName}
+              onChange={e => setEditName(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Typ</label>
+            <select
+              className="border rounded px-3 py-1.5 text-sm w-full"
+              value={editType}
+              onChange={e => setEditType(e.target.value)}
+            >
+              <option value="baum">🌳 Baum</option>
+              <option value="gebäude">🏡 Gebäude</option>
+              <option value="beet">🥕 Beet</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Abkürzung</label>
+            <input
+              className="border rounded px-3 py-1.5 text-sm w-full font-mono"
+              maxLength={5}
+              placeholder="z.B. GH1"
+              value={editAbbr}
+              onChange={e => setEditAbbr(e.target.value.toUpperCase())}
+            />
+          </div>
+          <div className="col-span-2 flex items-center gap-3">
+            <label className="text-xs text-gray-500 whitespace-nowrap">Symbolgröße:</label>
+            <input type="range" min={16} max={56} value={editSize} className="flex-1"
+              onChange={e => setEditSize(Number(e.target.value))}
+            />
+            <span style={{ fontSize: editSize + 'px', lineHeight: 1 }}>{TYPE_ICONS[editType]}</span>
+          </div>
         </div>
-        <div>
-          <label className="text-xs text-gray-500 mb-1 block">Typ</label>
-          <select
-            className="border rounded px-3 py-1.5 text-sm w-full"
-            value={editType}
-            onChange={e => { setEditType(e.target.value); saveField('type', e.target.value) }}
-          >
-            <option value="baum">🌳 Baum</option>
-            <option value="gebäude">🏡 Gebäude</option>
-            <option value="beet">🥕 Beet</option>
-          </select>
-        </div>
-        <div>
-          <label className="text-xs text-gray-500 mb-1 block">Abkürzung</label>
-          <input
-            className="border rounded px-3 py-1.5 text-sm w-full font-mono"
-            maxLength={5}
-            placeholder="z.B. GH1"
-            value={editAbbr}
-            onChange={e => setEditAbbr(e.target.value.toUpperCase())}
-            onBlur={() => saveField('abbreviation', editAbbr)}
-            onKeyDown={e => e.key === 'Enter' && saveField('abbreviation', editAbbr)}
-          />
-        </div>
-        <div className="col-span-2 flex items-center gap-3">
-          <label className="text-xs text-gray-500 whitespace-nowrap">Symbolgröße:</label>
-          <input type="range" min={16} max={56} value={editSize} className="flex-1"
-            onChange={e => setEditSize(Number(e.target.value))}
-            onMouseUp={e => saveField('size', Number(e.target.value))}
-            onTouchEnd={e => saveField('size', editSize)}
-          />
-          <span style={{ fontSize: editSize + 'px', lineHeight: 1 }}>{TYPE_ICONS[editType]}</span>
-        </div>
+        <button
+          onClick={confirmChanges}
+          className={`w-full py-2 rounded-lg text-sm font-semibold transition-colors
+            ${saved ? 'bg-green-100 text-green-700 border border-green-300' : 'bg-green-700 text-white hover:bg-green-800'}`}
+        >
+          {saved ? '✓ Gespeichert' : '✓ Änderungen bestätigen'}
+        </button>
       </div>
 
       {subPois?.length > 0 && (
