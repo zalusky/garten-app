@@ -176,10 +176,10 @@ export default function GardenMap({
   }
 
   return (
-    <div className="flex min-h-full">
+    <div className="flex" style={{ height: 'calc(100vh - 112px)' }}>
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
 
         {/* ── Breadcrumb-Leiste (bleibt als schmale grüne Leiste oben) ── */}
         <div className="flex items-center bg-green-800 text-white text-sm px-3 py-2 gap-1 flex-shrink-0 sticky top-0 z-10">
@@ -241,7 +241,7 @@ export default function GardenMap({
         )}
 
         {/* Canvas */}
-        <div className="flex-1">
+        <div className="flex-1 overflow-y-auto min-h-0">
           <MapLevel
             key={currentParentId ?? 'root'}
             parentId={currentParentId}
@@ -264,7 +264,7 @@ export default function GardenMap({
 
       {/* Explorer-Panel */}
       {explorerOpen && (
-        <div className="flex-shrink-0 flex" style={{ width: explorerWidth, borderLeft: '1px solid #bbf7d0' }}>
+        <div className="flex-shrink-0 flex min-h-0" style={{ width: explorerWidth, borderLeft: '1px solid #bbf7d0' }}>
           <div
             className="flex-shrink-0 w-2 cursor-col-resize hover:bg-green-300 active:bg-green-400 transition-colors"
             onMouseDown={startResize}
