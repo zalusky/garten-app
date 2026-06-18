@@ -127,7 +127,11 @@ export default function GardenMap({
 
   function handleExplorerNavigate(stack, poiId) {
     const targetPoi = allPois?.find(p => p.id === poiId)
-    if (targetPoi?.view_index != null) pendingViewIdx.current = targetPoi.view_index
+    const viewIdx = targetPoi?.view_index ?? 0
+    // Direkt setzen (für gleiche Ebene, imgKey ändert sich nicht)
+    setActiveViewIdx(viewIdx)
+    // Als Fallback für useEffect (falls imgKey sich ändert und Effect activeViewIdx überschreibt)
+    pendingViewIdx.current = viewIdx
     goTo(stack)
     setOpenedPoiId(poiId)
     if (highlightTimer.current) clearTimeout(highlightTimer.current)
@@ -294,19 +298,20 @@ function MapLevel({ parentId, parentPoi, allPois, mapImg, activeViewIdx, addMode
   const [crosshair, setCrosshair] = useState({ x: 50, y: 50, visible: false })
   const mapRef = useRef()
 
-  const pois = allPois?.filter(p => {
-    const matchParent = parentId === null
+  const levelPois = allPois?.filter(p =>
+    parentId === null
       ? (p.parent_id === null || p.parent_id === undefined)
       : p.parent_id === parentId
-    const matchView = (p.view_index ?? 0) === activeViewIdx
-    return matchParent && matchView
-  })
+  )
+  const pois = levelPois?.filter(p => (p.view_index ?? 0) === activeViewIdx)
 
+  // openedPoiId: suche in ALLEN Ebenen-POIs (nicht nur aktuellem View)
+  // damit der POI auch gefunden wird wenn activeViewIdx noch nicht gesetzt ist
   useEffect(() => {
-    if (!openedPoiId || !pois) return
-    const poi = pois.find(p => p.id === openedPoiId)
+    if (!openedPoiId || !levelPois) return
+    const poi = levelPois.find(p => p.id === openedPoiId)
     if (poi) { setSelected(poi); onOpenedPoiHandled?.() }
-  }, [openedPoiId, pois])
+  }, [openedPoiId, levelPois])
 
   function getRelativePos(e) {
     const rect = mapRef.current.getBoundingClientRect()
