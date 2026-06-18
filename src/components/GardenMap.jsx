@@ -537,6 +537,14 @@ function PoiDetail({ poi, onClose, onOpenLog, onDrillInto, canDrillInto }) {
   const [cultureForm, setCultureForm] = useState({ plant_name: '', variety: '', status: 'gepflanzt', planting_date: new Date().toISOString().slice(0, 10) })
   const [editSize, setEditSize] = useState(poi.size || 28)
   const [photoDate, setPhotoDate] = useState(new Date().toISOString().slice(0, 10))
+  const [editingName, setEditingName] = useState(false)
+  const [nameValue, setNameValue] = useState(poi.name)
+
+  async function saveName() {
+    const trimmed = nameValue.trim()
+    if (trimmed && trimmed !== poi.name) await db.pois.update(poi.id, { name: trimmed })
+    setEditingName(false)
+  }
 
   async function addCulture() {
     if (!cultureForm.plant_name.trim()) return
@@ -563,7 +571,24 @@ function PoiDetail({ poi, onClose, onOpenLog, onDrillInto, canDrillInto }) {
         <div className="flex items-center gap-2">
           <span style={{ fontSize: editSize + 'px' }}>{TYPE_ICONS[poi.type]}</span>
           <div>
-            <h2 className="font-bold text-green-800 text-base leading-tight">{poi.name}</h2>
+            {editingName ? (
+              <input
+                className="border-b-2 border-green-500 bg-transparent font-bold text-green-800 text-base leading-tight outline-none w-full"
+                value={nameValue}
+                onChange={e => setNameValue(e.target.value)}
+                onBlur={saveName}
+                onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setEditingName(false) }}
+                autoFocus
+              />
+            ) : (
+              <h2
+                className="font-bold text-green-800 text-base leading-tight cursor-pointer hover:underline hover:text-green-600"
+                onClick={() => setEditingName(true)}
+                title="Klicken zum Bearbeiten"
+              >
+                {poi.name} <span className="text-gray-300 text-xs font-normal">✏</span>
+              </h2>
+            )}
             {poi.abbreviation && <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-mono">{poi.abbreviation}</span>}
           </div>
         </div>
